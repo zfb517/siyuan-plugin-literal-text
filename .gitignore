@@ -1,6 +1,7 @@
 # 构建产物
 siyuan-plugin-literal-text.zip
 *.zip
+build/
 
 # Node
 node_modules/
