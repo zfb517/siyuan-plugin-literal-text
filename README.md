@@ -1,0 +1,127 @@
+# 转义 / Escape
+
+[![Version](https://img.shields.io/badge/version-2.7.0-brightgreen)](https://github.com/zfb517/siyuan-plugin-literal-text)
+[![Min App](https://img.shields.io/badge/siyuan-%E2%89%A5%203.7.0-blue)](https://github.com/siyuan-note/siyuan)
+[![Platform](https://img.shields.io/badge/platform-windows%20%7C%20macOS%20%7C%20linux%20%7C%20harmony%20%7C%20mobile-lightgrey)](https://github.com/zfb517/siyuan-plugin-literal-text)
+
+思源笔记插件 — 输入什么就显示什么，不让 Markdown 自动渲染吃掉你的 `*` `#` 等符号。
+
+---
+
+## 功能
+
+### 1. 字面文本输入
+
+输入一段文本，原样插入，不被 Markdown 渲染。
+
+- **快捷键**：`Ctrl+Shift+L`
+- **斜杠命令**：`/字面` 或 `/literal`
+
+### 2. 自动转义（默认开启）
+
+开启后，键盘输入 `*` 和 `#` 时自动转义，阻止 Markdown 渲染：
+
+| 输入 | 实际插入 | 效果 |
+|------|---------|------|
+| `*` | `\*` | 不被渲染为斜体/粗体 |
+| `#` | `` `#` `` | 不被渲染为标签/标题 |
+
+- **快捷键**：`Ctrl+Shift+E` 切换开关
+- **状态指示**：顶部工具栏第三个按钮（绿色盾牌=ON / 灰色空心=OFF）
+
+> **提示**：`#` 字符在思源 Lute 引擎中用 `\#` 或零宽空格均无法阻止解析，因此采用行内代码包裹 `` `#` ``，视觉上会有浅灰背景，但这是唯一可靠方案。
+
+### 3. 富文本粘贴
+
+粘贴公众号/网页内容时自动下载图片到思源笔记。
+
+- **快捷键**：`Ctrl+Shift+V`
+- **斜杠命令**：`/富文本` 或 `/richpaste`
+
+> 移动端 `Ctrl+Shift+V` 不可用，请直接 `Ctrl+V` 粘贴，插件会通过事件拦截自动处理富文本内容。
+
+---
+
+## 安装
+
+### 方式一：从 GitHub Release 安装
+
+1. 下载 [siyuan-plugin-literal-text.zip](https://github.com/zfb517/siyuan-plugin-literal-text/releases)
+2. 思源笔记 → 设置 → 插件 → 从本地安装 → 选择 zip 文件
+
+### 方式二：从源码构建
+
+```bash
+git clone https://github.com/zfb517/siyuan-plugin-literal-text.git
+cd siyuan-plugin-literal-text
+node esbuild-build.js
+```
+
+然后将以下文件打包为 zip 安装：
+
+```
+index.js  index.css  plugin.json  icon.png  i18n/en.json  i18n/zh-CN.json
+```
+
+---
+
+## 兼容性
+
+| 平台 | 桌面端 | 浏览器桌面 | 手机端 | 浏览器手机 | 鸿蒙 |
+|------|:--:|:--:|:--:|:--:|:--:|
+| Windows | ✅ | ✅ | — | — | — |
+| macOS | ✅ | ✅ | — | — | — |
+| Linux | ✅ | ✅ | — | — | — |
+| Android | — | — | ✅ | ✅ | — |
+| iOS | — | — | ✅ | ✅ | — |
+| HarmonyOS | — | — | — | — | ✅ |
+
+---
+
+## 开发
+
+```bash
+# 安装依赖
+npm install
+
+# 一次性构建
+node esbuild-build.js
+
+# 监听模式（修改代码自动构建）
+node esbuild-build.js --watch
+```
+
+项目结构：
+
+```
+src/index.js        # 插件源码
+index.css           # 样式
+plugin.json         # 插件元信息
+icon.png            # 160x160 插件图标
+i18n/
+  zh-CN.json        # 中文翻译
+  en.json           # 英文翻译
+esbuild-build.js    # 构建脚本
+```
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| 2.7.0 | 2026-07-04 | 代码质量清理，SVG 图标跟随主题 |
+| 2.6.0 | 2026-07-04 | 自动转义默认开启，移动端兼容增强 |
+| 2.5.0 | 2026-07-04 | 修复顶栏图标不显示（addIcons + Symbol ID） |
+| 2.4.0 | 2026-07-04 | # 转义改用行内代码包裹，去除右下角指示器 |
+| 2.3.0 | 2026-07-04 | 修复插入位置跳到文首，自动转义位置错误 |
+| 2.2.0 | 2026-07-04 | # 零宽空格保护，顶部栏第三按钮切换开关 |
+| 2.1.0 | 2026-07-04 | 修复快捷键符号/斜杠命令/顶栏按钮致命 bug |
+| 2.0.0 | 2026-07-04 | 全面重写，修复 5 个严重 + 7 个中等问题 |
+| 1.x  | 2026-07-04 | 初始版本，功能探索 |
+
+---
+
+## License
+
+MIT
