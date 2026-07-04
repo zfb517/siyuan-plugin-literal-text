@@ -59,29 +59,6 @@
   color: var(--b3-theme-on-background);
 }
 
-/* ---------- 自动转义指示器 ---------- */
-.lt-escape-indicator {
-  position: fixed;
-  bottom: 14px;
-  right: 14px;
-  background: var(--b3-theme-primary);
-  color: #fff;
-  padding: 5px 14px;
-  border-radius: 14px;
-  font-size: 12px;
-  z-index: 999998;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
-  cursor: pointer;
-  user-select: none;
-  font-family: system-ui, sans-serif;
-  animation: lt-pulse 2s ease-in-out infinite;
-}
-
-@keyframes lt-pulse {
-  0%, 100% { opacity: .85; }
-  50%      { opacity: 1; }
-}
-
 /* ---------- 粘贴处理 Toast ---------- */
 .lt-toast {
   position: fixed;
@@ -119,11 +96,5 @@
 
   .lt-mode-label {
     min-height: 36px;  /* 触控目标 ≥36px */
-  }
-
-  .lt-escape-indicator {
-    bottom: 80px;  /* 避开移动端底部工具栏 */
-    padding: 8px 18px;
-    font-size: 13px;
   }
 }

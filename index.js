@@ -36,10 +36,10 @@ var ICON_SYMBOLS = `
   <path fill="currentColor" d="M19 2h-4.18C14.4.84 13.3 0 12 0c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1zm7 18H5V4h2v3h10V4h2v16z"/>
 </symbol>
 <symbol id="iconShieldOn" viewBox="0 0 24 24">
-  <path fill="#10b981" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
+  <path fill="currentColor" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
 </symbol>
 <symbol id="iconShieldOff" viewBox="0 0 24 24">
-  <path fill="none" stroke="#999" stroke-width="2" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+  <path fill="none" stroke="currentColor" stroke-width="2" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
 </symbol>`;
 var ICON_CODE_ID = "iconEscape";
 var ICON_PASTE_ID = "iconPaste";
@@ -52,7 +52,7 @@ var _isMobile = () => {
 var LiteralTextPlugin = class extends import_siyuan.Plugin {
   /* ---------- 生命周期 ---------- */
   async onload() {
-    console.log("[\u8F6C\u4E49] v2.6.0 \u5F00\u59CB\u52A0\u8F7D...");
+    console.log("[\u8F6C\u4E49] v2.7.0 \u5F00\u59CB\u52A0\u8F7D...");
     this.config = await this.loadData(STORAGE_KEY).catch((err) => {
       console.warn("[\u8F6C\u4E49] \u914D\u7F6E\u52A0\u8F7D\u5931\u8D25\uFF0C\u4F7F\u7528\u9ED8\u8BA4\u503C:", err);
       return {};
@@ -95,7 +95,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       },
       {
         filter: ["\u8F6C\u4E49\u6587\u672C", "escape", "zywb"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u8F6C\u4E49\u6587\u672C\u8F93\u5165</span><span class="b3-list-item\\_meta">\\*\\# \u7EAF\u6587\u672C</span></div>',
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u8F6C\u4E49\u6587\u672C\u8F93\u5165</span><span class="b3-list-item__meta">\\*\\# \u7EAF\u6587\u672C</span></div>',
         id: "escape-input",
         callback: (protyle) => this._showLiteralDialog("escape", protyle)
       },
@@ -116,7 +116,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     if (this.autoEscapeMode) {
       this._enableAutoEscape();
     }
-    (0, import_siyuan.showMessage)("\u8F6C\u4E49 v2.6.0 \u5DF2\u52A0\u8F7D \u2705", 2500, "info");
+    (0, import_siyuan.showMessage)("\u8F6C\u4E49 v2.7.0 \u5DF2\u52A0\u8F7D \u2705", 2500, "info");
     console.log("[\u8F6C\u4E49] \u52A0\u8F7D\u5B8C\u6210\uFF0C\u524D\u7AEF\uFF1A" + (0, import_siyuan.getFrontend)() + "\uFF0C\u81EA\u52A8\u8F6C\u4E49\uFF1A" + (this.autoEscapeMode ? "\u5F00\u542F" : "\u5173\u95ED"));
   }
   onLayoutReady() {
@@ -176,9 +176,9 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       const use = this._escapeTopBarBtn.querySelector("use");
       if (use && svg) {
         const newId = this.autoEscapeMode ? ICON_ESCAPE_ON_ID : ICON_ESCAPE_OFF_ID;
-        use.setAttribute("xlink:href", "#" + newId);
         use.setAttribute("href", "#" + newId);
-        this._escapeTopBarBtn.title = this.autoEscapeMode ? "\u2705 \u81EA\u52A8\u8F6C\u4E49\u5DF2\u5F00\u542F\uFF08\u70B9\u51FB\u5173\u95ED\uFF09" : "\u2B1C \u81EA\u52A8\u8F6C\u4E49\u5DF2\u5173\u95ED\uFF08\u70B9\u51FB\u5F00\u542F\uFF09";
+        svg.style.color = this.autoEscapeMode ? "var(--b3-theme-primary)" : "var(--b3-empty-color)";
+        this._escapeTopBarBtn.title = this.autoEscapeMode ? "\u81EA\u52A8\u8F6C\u4E49\uFF1A\u5DF2\u5F00\u542F\uFF08\u70B9\u51FB\u5173\u95ED\uFF09" : "\u81EA\u52A8\u8F6C\u4E49\uFF1A\u5DF2\u5173\u95ED\uFF08\u70B9\u51FB\u5F00\u542F\uFF09";
       }
     } catch (e) {
     }
@@ -400,11 +400,8 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     (0, import_siyuan.showMessage)("\u63D2\u5165\u5931\u8D25", 3e3, "error");
   }
-  _insertText(t, p) {
-    this._insertTextAtFocus(t, p, !!this._savedRange);
-  }
   /* ==========================================================
-     二、自动转义（★ v2.4.0：# 用行内代码包裹）
+     二、自动转义
      ========================================================== */
   _toggleAutoEscape() {
     this.autoEscapeMode = !this.autoEscapeMode;
@@ -517,13 +514,11 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
   }
   _htmlToMarkdown(html, protyle) {
-    return new Promise((resolve, reject) => {
-      const fd = new FormData();
-      fd.append("dom", html);
-      const nb = this._getNotebookId(protyle);
-      if (nb) fd.append("notebook", nb);
-      fetch(API_COPY, { method: "POST", body: fd }).then((r) => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))).then((resp) => resp.code === 0 ? resolve(resp.data?.md || "") : reject(new Error(resp.msg))).catch(reject);
-    });
+    const fd = new FormData();
+    fd.append("dom", html);
+    const nb = this._getNotebookId(protyle);
+    if (nb) fd.append("notebook", nb);
+    return fetch(API_COPY, { method: "POST", body: fd }).then((r) => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))).then((resp) => resp.code === 0 ? resp.data?.md || "" : Promise.reject(new Error(resp.msg)));
   }
   _getNotebookId(protyle) {
     return protyle?.notebook?.id || protyle?.notebookId || protyle?.block?.rootID || (() => {

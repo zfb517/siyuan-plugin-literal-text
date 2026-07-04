@@ -1,5 +1,5 @@
 /**
- * 思源笔记插件 - 转义 v2.6.0
+ * 思源笔记插件 - 转义 v2.7.0
  *
  * 功能一：字面文本输入
  *   Ctrl+Shift+L  弹窗输入，不被 Markdown 渲染
@@ -14,10 +14,10 @@
  * 功能三：富文本粘贴（公众号/网页粘贴自动下载图片）
  *   Ctrl+Shift+V  手动触发 | /富文本 斜杠命令
  *
- * v2.6.0 变更：
- *   - 自动转义默认开启（新安装用户不再需要手动开启）
- *   - 配置持久化增加日志，方便排查重启重置问题
- *   - 移动端兼容性增强（clipboard API 降级、addTopBar 容错）
+ * v2.7.0 变更：
+ *   - 代码质量清理：移除 CSS 死代码、僵尸 i18n key、冗余方法
+ *   - SVG 图标改用 currentColor 跟随主题
+ *   - _htmlToMarkdown 移除多余的 new Promise 包装
  */
 
 import { Plugin, Dialog, showMessage, getFrontend, getActiveEditor, getAllEditor } from "siyuan";
@@ -30,7 +30,7 @@ const API_COPY = "/api/extension/copy";
 const API_INSERT = "/api/block/insertBlock";
 
 /**
- * 安全字符映射（v2.4.0 最终版）
+ * 安全字符映射（# 行内代码包裹是唯一可靠方案）
  *
  * 经过实测验证：
  *   \*    → Lute 正确保留，不渲染为斜体 ✅
@@ -53,10 +53,10 @@ const ICON_SYMBOLS = `
   <path fill="currentColor" d="M19 2h-4.18C14.4.84 13.3 0 12 0c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1zm7 18H5V4h2v3h10V4h2v16z"/>
 </symbol>
 <symbol id="iconShieldOn" viewBox="0 0 24 24">
-  <path fill="#10b981" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
+  <path fill="currentColor" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
 </symbol>
 <symbol id="iconShieldOff" viewBox="0 0 24 24">
-  <path fill="none" stroke="#999" stroke-width="2" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+  <path fill="none" stroke="currentColor" stroke-width="2" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
 </symbol>`;
 
 /** 图标 ID 引用（用于 addTopBar） */
@@ -80,7 +80,7 @@ export default class LiteralTextPlugin extends Plugin {
 
   /* ---------- 生命周期 ---------- */
   async onload() {
-    console.log("[转义] v2.6.0 开始加载...");
+    console.log("[转义] v2.7.0 开始加载...");
 
     /* --- 加载配置（带日志） --- */
     this.config = await this.loadData(STORAGE_KEY).catch((err) => {
@@ -136,7 +136,7 @@ export default class LiteralTextPlugin extends Plugin {
       },
       {
         filter: ["转义文本", "escape", "zywb"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">转义文本输入</span><span class="b3-list-item\\_meta">\\*\\# 纯文本</span></div>',
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">转义文本输入</span><span class="b3-list-item__meta">\\*\\# 纯文本</span></div>',
         id: "escape-input",
         callback: (protyle) => this._showLiteralDialog("escape", protyle),
       },
@@ -162,7 +162,7 @@ export default class LiteralTextPlugin extends Plugin {
       this._enableAutoEscape();
     }
 
-    showMessage("转义 v2.6.0 已加载 ✅", 2500, "info");
+    showMessage("转义 v2.7.0 已加载 ✅", 2500, "info");
     console.log("[转义] 加载完成，前端：" + getFrontend() + "，自动转义：" + (this.autoEscapeMode ? "开启" : "关闭"));
   }
 
@@ -230,16 +230,17 @@ export default class LiteralTextPlugin extends Plugin {
   _updateEscapeButton() {
     if (!this._escapeTopBarBtn) return;
     try {
-      // 通过替换 <svg> 内部的 <use href> 属性来切换图标
       const svg = this._escapeTopBarBtn.querySelector("svg");
       const use = this._escapeTopBarBtn.querySelector("use");
       if (use && svg) {
         const newId = this.autoEscapeMode ? ICON_ESCAPE_ON_ID : ICON_ESCAPE_OFF_ID;
-        use.setAttribute("xlink:href", "#" + newId);
         use.setAttribute("href", "#" + newId);
+        svg.style.color = this.autoEscapeMode
+          ? "var(--b3-theme-primary)"
+          : "var(--b3-empty-color)";
         this._escapeTopBarBtn.title = this.autoEscapeMode
-          ? "✅ 自动转义已开启（点击关闭）"
-          : "⬜ 自动转义已关闭（点击开启）";
+          ? "自动转义：已开启（点击关闭）"
+          : "自动转义：已关闭（点击开启）";
       }
     } catch (e) { /* 静默 */ }
   }
@@ -423,11 +424,10 @@ export default class LiteralTextPlugin extends Plugin {
     showMessage("插入失败", 3000, "error");
   }
 
-  _insertText(t, p) { this._insertTextAtFocus(t, p, !!this._savedRange); }
-
   /* ==========================================================
-     二、自动转义（★ v2.4.0：# 用行内代码包裹）
+     二、自动转义
      ========================================================== */
+
   _toggleAutoEscape() {
     this.autoEscapeMode = !this.autoEscapeMode;
     this._saveConfig();
@@ -446,15 +446,11 @@ export default class LiteralTextPlugin extends Plugin {
     if (this._escapeHandler) return;
 
     /**
-     * v2.4.0 最终方案（经过 3 次迭代验证）：
+     * # 字符自动转义（经过 3 次迭代验证）：
      *
      * 迭代1: \#         → 被 Lute 块级扫描器吃掉，仍渲染为标签 ❌
      * 迭代2: \u200B#     → 零宽空格被 Lute 忽略，继续解析 # ❌
      * 迭代3: `#` (行内代码) → Lute 不解析行内代码内部内容 ✅
-     *
-     * 结论：对思源来说，行内代码是唯一能可靠保护 # 字符的方式。
-     * 视觉代价是 # 会带一点灰色背景（和周围文字略有区分），
-     * 但这远好于变成蓝色标签或被吃掉变成标题。
      */
     this._escapeHandler = (e) => {
       if (!this.autoEscapeMode) return;
@@ -559,16 +555,13 @@ export default class LiteralTextPlugin extends Plugin {
   }
 
   _htmlToMarkdown(html, protyle) {
-    return new Promise((resolve, reject) => {
-      const fd = new FormData();
-      fd.append("dom", html);
-      const nb = this._getNotebookId(protyle);
-      if (nb) fd.append("notebook", nb);
-      fetch(API_COPY, { method: "POST", body: fd })
-        .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
-        .then(resp => resp.code === 0 ? resolve(resp.data?.md || "") : reject(new Error(resp.msg)))
-        .catch(reject);
-    });
+    const fd = new FormData();
+    fd.append("dom", html);
+    const nb = this._getNotebookId(protyle);
+    if (nb) fd.append("notebook", nb);
+    return fetch(API_COPY, { method: "POST", body: fd })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(resp => resp.code === 0 ? (resp.data?.md || "") : Promise.reject(new Error(resp.msg)));
   }
 
   _getNotebookId(protyle) {
