@@ -1,0 +1,13 @@
+{
+  "quickLiteralInput": "Quick Literal Input",
+  "toggleAutoEscape": "Toggle Auto Escape",
+  "richPaste": "Rich Paste (auto download images)",
+  "insertLiteral": "Insert Literal Text",
+  "autoEscapeOn": "Auto escape enabled",
+  "autoEscapeOff": "Auto escape disabled",
+  "settings": "Plugin Settings",
+  "literalText": "Literal Text",
+  "richPasteTitle": "Rich Text Paste",
+  "enabled": "Enabled",
+  "disabled": "Disabled"
+}
