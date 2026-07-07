@@ -5,5 +5,7 @@
   "selectionToLiteral": "选区转字面量（行内代码）",
   "selectionToEscape": "选区转转义（纯文本）",
   "convertToHalf": "全角转半角",
-  "convertToFull": "半角转全角"
+  "convertToFull": "半角转全角",
+  "literalBlockInput": "字面文本块（多行）",
+  "unescapeSelection": "反字面（还原为普通文本）"
 }

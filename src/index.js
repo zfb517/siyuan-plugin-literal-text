@@ -92,8 +92,15 @@ export default class LiteralTextPlugin extends Plugin {
     // ★ 默认开启自动转义（用户首次安装即生效）
     this.autoEscapeMode = this.config.autoEscape ?? true;
     this.richPasteEnabled = this.config.richPaste ?? true;
+    // 自动转义字符集（默认 * 和 #，与历史行为一致）
+    this.escapeChars = Array.isArray(this.config.escapeChars) && this.config.escapeChars.length
+      ? this.config.escapeChars.filter((c) => typeof c === "string" && c.length === 1)
+      : ["*", "#"];
+    // 富粘贴图片保存子目录（assets/ 下，为空则用默认 assets/）
+    this.assetSubdir = typeof this.config.assetSubdir === "string" ? this.config.assetSubdir : "";
 
-    console.log("[转义] autoEscape=" + this.autoEscapeMode + " richPaste=" + this.richPasteEnabled);
+    console.log("[转义] autoEscape=" + this.autoEscapeMode + " richPaste=" + this.richPasteEnabled +
+      " escapeChars=" + JSON.stringify(this.escapeChars) + " assetSubdir=" + this.assetSubdir);
 
     this.pasteHandler = null;
     this._escapeHandler = null;
@@ -134,6 +141,16 @@ export default class LiteralTextPlugin extends Plugin {
       langKey: "selectionToEscape",
       langText: "选区转转义（纯文本）",
       callback: () => this._selectionToLiteral("escape"),
+    });
+    this.addCommand({
+      langKey: "literalBlockInput",
+      langText: "字面文本块（多行）",
+      callback: () => this._showLiteralBlockDialog(),
+    });
+    this.addCommand({
+      langKey: "unescapeSelection",
+      langText: "反字面（还原为普通文本）",
+      callback: () => this._unescapeSelection(),
     });
     this.addCommand({
       langKey: "convertToHalf",
@@ -183,6 +200,18 @@ export default class LiteralTextPlugin extends Plugin {
         html: '<div class="b3-list-item__first"><span class="b3-list-item__text">选区转转义</span><span class="b3-list-item__meta">选中文本→纯文本</span></div>',
         id: "selection-escape",
         callback: () => this._selectionToLiteral("escape"),
+      },
+      {
+        filter: ["字面块", "literal block", "zmk"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">字面文本块</span><span class="b3-list-item__meta">插入多行代码块</span></div>',
+        id: "literal-block",
+        callback: () => this._showLiteralBlockDialog(),
+      },
+      {
+        filter: ["反字面", "unwrap", "flz"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">反字面</span><span class="b3-list-item__meta">还原行内代码/转义</span></div>',
+        id: "un-literal",
+        callback: () => this._unescapeSelection(),
       },
       {
         filter: ["全角转半角", "tohalf", "qjzhb"],
@@ -270,6 +299,8 @@ export default class LiteralTextPlugin extends Plugin {
   async _saveConfig() {
     this.config.autoEscape = this.autoEscapeMode;
     this.config.richPaste = this.richPasteEnabled;
+    this.config.escapeChars = this.escapeChars;
+    this.config.assetSubdir = this.assetSubdir;
     console.log("[转义] 保存配置:", JSON.stringify(this.config));
     try {
       await this.saveData(STORAGE_KEY, this.config);
@@ -432,6 +463,13 @@ export default class LiteralTextPlugin extends Plugin {
       .replace(/#/g, SAFE_HASH);
   }
 
+  /** 按字符返回其"安全替换"形式：*→\*，#→`#`（行内代码包裹），其它→\X 反斜杠前缀 */
+  _safeCharFor(ch) {
+    if (ch === "*") return SAFE_ASTERISK;
+    if (ch === "#") return SAFE_HASH;
+    return "\\" + ch;
+  }
+
   /* ==========================================================
      文本插入
      ========================================================== */
@@ -563,12 +601,14 @@ export default class LiteralTextPlugin extends Plugin {
       if (e.isComposing || e.key === "Process") return;
       if (!this.autoEscapeMode) return;
       if (!e.target.closest?.(".protyle-wysiwyg")) return;
-      if (!["*", "#"].includes(e.key)) return;
+      // ★ 代码块 / 行内代码内不打断：里面本就是字面量，再加转义是画蛇添足
+      if (e.target.closest?.(".code-block, [data-type='code-block'], code")) return;
+      if (!this.escapeChars.includes(e.key)) return;
 
       e.preventDefault();
       e.stopPropagation();
 
-      const safeChar = e.key === "#" ? SAFE_HASH : SAFE_ASTERISK;
+      const safeChar = this._safeCharFor(e.key);
       if (!document.execCommand("insertText", false, safeChar)) {
         const p = this._getActiveProtyle();
         if (p?.insert) p.insert(safeChar);
@@ -601,7 +641,7 @@ export default class LiteralTextPlugin extends Plugin {
       event.preventDefault();
       const toastId = this._showToast("处理中...", 0);
       try {
-        const md = await this._htmlToMarkdown(textHTML, detail.protyle);
+        const md = await this._pasteHtmlToMarkdown(textHTML, detail.protyle);
         this._removeToast(toastId);
         if (md?.trim()) {
           detail.resolve({ textPlain: md });
@@ -631,7 +671,7 @@ export default class LiteralTextPlugin extends Plugin {
           const html = await (await item.getType("text/html")).text();
           const tid = this._showToast("处理中...", 0);
           try {
-            const md = await this._htmlToMarkdown(html, p);
+            const md = await this._pasteHtmlToMarkdown(html, p);
             this._removeToast(tid);
             if (md?.trim()) {
               this._restoreCursorPosition();
@@ -686,10 +726,156 @@ export default class LiteralTextPlugin extends Plugin {
   }
 
   /* ==========================================================
+     三·五、富粘贴图片子目录迁移
+     ========================================================== */
+
+  /** HTML → Markdown（含图片本地化），并依据设置把图片迁到 assets/<subdir>/ */
+  async _pasteHtmlToMarkdown(html, protyle) {
+    const md = await this._htmlToMarkdown(html, protyle);
+    if (!md || !this.assetSubdir) return md;
+    try {
+      return await this._relocateAssets(md, this.assetSubdir, protyle);
+    } catch (e) {
+      console.warn("[转义] 图片子目录迁移失败，保留默认 assets:", e.message);
+      return md;
+    }
+  }
+
+  /**
+   * 把 Markdown 中 assets/ 下的图片迁到 assets/<subdir>/（思源内核 API）。
+   * 任何一步失败都会保留原引用，绝不破坏粘贴结果。
+   */
+  async _relocateAssets(md, subdir, protyle) {
+    const safe = (subdir || "").replace(/[^a-zA-Z0-9_\-]/g, "");
+    if (!safe) return md;
+    const re = /(!\[[^\]]*\]\(\s*)(\.\/)?assets\/([^)\s]+?)(\s*(?:"[^"]*")?\s*\))/g;
+    const matches = [...md.matchAll(re)];
+    if (!matches.length) return md;
+    let out = md;
+    for (const m of matches) {
+      const file = m[3];
+      const srcUrl = "/assets/" + encodeURI(file);
+      try {
+        const resp = await fetch(srcUrl);
+        if (!resp.ok) continue;
+        const blob = await resp.blob();
+        const destPath = `assets/${safe}/${file}`;
+        const fd = new FormData();
+        fd.append("path", destPath);
+        fd.append("file", blob, file);
+        const up = await fetch("/api/file/putFile", { method: "POST", body: fd }).then((r) => r.json()).catch(() => null);
+        if (up && up.code === 0) {
+          out = out.split(m[0]).join(m[1] + destPath + m[4]);
+          // 清理原位置图片
+          fetch("/api/file/removeFile?path=" + encodeURIComponent("assets/" + file), { method: "POST" }).catch(() => {});
+        }
+      } catch (e) {
+        console.warn("[转义] 单张图片迁移失败，保留原引用:", file, e.message);
+      }
+    }
+    return out;
+  }
+
+  /* ==========================================================
+     三·六、字面文本块（多行）
+     ========================================================== */
+  _showLiteralBlockDialog(protyle) {
+    const mobile = _isMobile();
+    const p = protyle || this._getActiveProtyle();
+    if (!p) { showMessage("请先打开文档", 3000, "warning"); return; }
+    this._saveCursorPosition(p);
+
+    const dialog = new Dialog({
+      title: "字面文本块（多行）",
+      width: mobile ? "92%" : "560px",
+      content: `
+        <div style="padding:20px 24px 8px;">
+          <div class="lt-dialog-hint">
+            插入一个多行代码块，内容原样显示、不被 Markdown 渲染。<br/>
+            适合消防设备型号表、多行规格、长代码片段等。
+          </div>
+          <textarea id="lt-block-input" class="b3-text-field"
+                    style="width:100%;min-height:${mobile ? "160px" : "140px"};padding:${mobile ? "12px 14px" : "9px 12px"};font-size:${mobile ? "16px" : "14px"};resize:vertical;"
+                    placeholder="JTW-ZD-9911*2&#10;JTW-ZD-9912*4&#10;... (每行一条，原样保留 * # 等符号)"></textarea>
+        </div>
+        <div class="b3-dialog__action" style="padding:12px 24px 16px;">
+          <button class="b3-button" id="ltb-cancel" style="margin-right:8px;">取消</button>
+          <button class="b3-button b3-button--primary" id="ltb-ok">插入代码块</button>
+        </div>`,
+    });
+
+    const $ = (s) => dialog.element.querySelector(s);
+    const input = $("#lt-block-input");
+    setTimeout(() => input?.focus(), mobile ? 200 : 80);
+
+    const confirm = () => {
+      const text = input.value;
+      dialog.destroy();
+      this._clearSavedPosition();
+      if (!text.trim()) return;
+      this._insertCodeBlock(text, p);
+    };
+
+    $("#ltb-ok").addEventListener("click", confirm);
+    $("#ltb-cancel").addEventListener("click", () => { dialog.destroy(); this._clearSavedPosition(); });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); confirm(); }
+      if (e.key === "Escape") { e.preventDefault(); dialog.destroy(); this._clearSavedPosition(); }
+    });
+  }
+
+  /** 在当前块后插入一个代码块（多行字面文本） */
+  async _insertCodeBlock(text, protyle) {
+    const p = protyle || this._getActiveProtyle() || this._savedProtyle;
+    if (!p) { showMessage("请先打开文档", 3000, "warning"); return; }
+    const md = "```\n" + text.replace(/\n+$/, "") + "\n```\n";
+    const blockId = this._savedBlockId || this._getCurrentBlockId(p);
+    try {
+      if (blockId) {
+        await this._insertBlockAfter(blockId, md);
+      } else if (typeof p.insert === "function") {
+        p.insert(md);
+      } else {
+        throw new Error("no insert target");
+      }
+      showMessage("已插入字面文本块 ✅", 2000, "info");
+    } catch (err) {
+      console.error("[转义] 插入代码块失败:", err);
+      showMessage("插入失败，已退回焦点插入", 3000, "error");
+      this._insertTextAtFocus(md, p);
+    }
+  }
+
+  /* ==========================================================
+     三·七、反字面（还原为普通文本）
+     ========================================================== */
+  _unescapeSelection() {
+    const sel = window.getSelection();
+    const text = sel ? sel.toString() : "";
+    if (!text || !text.trim()) {
+      showMessage("请先选中要还原的文本", 2500, "warning");
+      return;
+    }
+    // 去掉紧接在特殊字符前的转义反斜杠；选区替换会同时清除行内代码格式（unwrap）
+    const unescaped = text.replace(/\\([*#_~`+\-!|><[\](){}])/g, "$1");
+    this._replaceSelection(unescaped);
+    showMessage("已还原为普通文本 ✅", 2000, "info");
+  }
+
+  /* ==========================================================
      四、设置面板
      ========================================================== */
   _showSettingsDialog() {
     const mobile = _isMobile();
+    const escapeCandidates = ["*", "#", "_", "~", ">", "[", "]", "|", "+", "!"];
+    const charHints = { "*": "&#92;*", "#": "&#96;#&#96;", "_": "&#92;_", "~": "&#92;~", ">": "&#92;>", "[": "&#92;[", "]": "&#92;]", "|": "&#92;|", "+": "&#92;+", "!": "&#92;!" };
+    const charChecks = escapeCandidates.map((c) => {
+      const checked = this.escapeChars.includes(c) ? "checked" : "";
+      return '<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin:0 10px 6px 0;">'
+        + '<input type="checkbox" name="cfg-escape-char" value="' + c + '" ' + checked + '/>'
+        + '<span><code>' + c + '</code> → <code>' + charHints[c] + '</code></span></label>';
+    }).join("");
+
     const dialog = new Dialog({
       title: "转义 · 设置",
       width: mobile ? "92%" : "480px",
@@ -700,14 +886,26 @@ export default class LiteralTextPlugin extends Plugin {
             <input type="checkbox" id="cfg-auto-escape" ${this.autoEscapeMode ? "checked" : ""}/>
             <span>开启自动转义（* → \\* ，# → 行内代码）</span>
           </label>
+          <div style="margin:4px 0;color:var(--b3-empty-color);">自动转义的字符（默认 * 和 #）：</div>
+          <div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">${charChecks}</div>
+          <div style="font-size:12px;color:var(--b3-empty-color);margin-bottom:4px;">
+            # 用行内代码包裹（浅灰背景），其它用反斜杠前缀；代码块内输入的字符不受影响
+          </div>
 
           <div class="lt-settings-divider"></div>
 
           <div class="lt-settings-section">富文本粘贴</div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
             <input type="checkbox" id="cfg-rich-paste" ${this.richPasteEnabled ? "checked" : ""}/>
             <span>自动拦截粘贴，调用内核 API 本地化图片</span>
           </label>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span>图片保存子目录：</span>
+            <input type="text" id="cfg-asset-subdir" class="b3-text-field fn__size200" value="${this.assetSubdir}" placeholder="留空=默认 assets/"/>
+          </div>
+          <div style="font-size:12px;color:var(--b3-empty-color);margin-bottom:4px;">
+            如填 <code>wechat</code>，图片存到 <code>assets/wechat/</code>（仅字母数字下划线连字符）
+          </div>
 
           <div class="lt-settings-warn">
             <b>说明</b><br/>
@@ -733,6 +931,9 @@ export default class LiteralTextPlugin extends Plugin {
         this._updateEscapeButton();
       }
       this.richPasteEnabled = newRP;
+      const newChars = [...dialog.element.querySelectorAll('input[name="cfg-escape-char"]:checked')].map((cb) => cb.value);
+      this.escapeChars = newChars.length ? newChars : ["*", "#"];
+      this.assetSubdir = ($("#cfg-asset-subdir").value || "").trim();
       await this._saveConfig();
       dialog.destroy();
       showMessage("已保存", 2000, "info");

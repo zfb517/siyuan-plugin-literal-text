@@ -5,5 +5,7 @@
   "selectionToLiteral": "Selection to Literal (inline code)",
   "selectionToEscape": "Selection to Escaped (plain text)",
   "convertToHalf": "Full-width to Half-width",
-  "convertToFull": "Half-width to Full-width"
+  "convertToFull": "Half-width to Full-width",
+  "literalBlockInput": "Literal Block (multi-line)",
+  "unescapeSelection": "Un-literal (restore to plain text)"
 }

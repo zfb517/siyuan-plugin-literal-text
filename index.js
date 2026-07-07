@@ -60,7 +60,9 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     console.log("[\u8F6C\u4E49] \u5DF2\u52A0\u8F7D\u914D\u7F6E:", JSON.stringify(this.config));
     this.autoEscapeMode = this.config.autoEscape ?? true;
     this.richPasteEnabled = this.config.richPaste ?? true;
-    console.log("[\u8F6C\u4E49] autoEscape=" + this.autoEscapeMode + " richPaste=" + this.richPasteEnabled);
+    this.escapeChars = Array.isArray(this.config.escapeChars) && this.config.escapeChars.length ? this.config.escapeChars.filter((c) => typeof c === "string" && c.length === 1) : ["*", "#"];
+    this.assetSubdir = typeof this.config.assetSubdir === "string" ? this.config.assetSubdir : "";
+    console.log("[\u8F6C\u4E49] autoEscape=" + this.autoEscapeMode + " richPaste=" + this.richPasteEnabled + " escapeChars=" + JSON.stringify(this.escapeChars) + " assetSubdir=" + this.assetSubdir);
     this.pasteHandler = null;
     this._escapeHandler = null;
     this._escapeTopBarBtn = null;
@@ -95,6 +97,16 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       langKey: "selectionToEscape",
       langText: "\u9009\u533A\u8F6C\u8F6C\u4E49\uFF08\u7EAF\u6587\u672C\uFF09",
       callback: () => this._selectionToLiteral("escape")
+    });
+    this.addCommand({
+      langKey: "literalBlockInput",
+      langText: "\u5B57\u9762\u6587\u672C\u5757\uFF08\u591A\u884C\uFF09",
+      callback: () => this._showLiteralBlockDialog()
+    });
+    this.addCommand({
+      langKey: "unescapeSelection",
+      langText: "\u53CD\u5B57\u9762\uFF08\u8FD8\u539F\u4E3A\u666E\u901A\u6587\u672C\uFF09",
+      callback: () => this._unescapeSelection()
     });
     this.addCommand({
       langKey: "convertToHalf",
@@ -142,6 +154,18 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
         html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u9009\u533A\u8F6C\u8F6C\u4E49</span><span class="b3-list-item__meta">\u9009\u4E2D\u6587\u672C\u2192\u7EAF\u6587\u672C</span></div>',
         id: "selection-escape",
         callback: () => this._selectionToLiteral("escape")
+      },
+      {
+        filter: ["\u5B57\u9762\u5757", "literal block", "zmk"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u5B57\u9762\u6587\u672C\u5757</span><span class="b3-list-item__meta">\u63D2\u5165\u591A\u884C\u4EE3\u7801\u5757</span></div>',
+        id: "literal-block",
+        callback: () => this._showLiteralBlockDialog()
+      },
+      {
+        filter: ["\u53CD\u5B57\u9762", "unwrap", "flz"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u53CD\u5B57\u9762</span><span class="b3-list-item__meta">\u8FD8\u539F\u884C\u5185\u4EE3\u7801/\u8F6C\u4E49</span></div>',
+        id: "un-literal",
+        callback: () => this._unescapeSelection()
       },
       {
         filter: ["\u5168\u89D2\u8F6C\u534A\u89D2", "tohalf", "qjzhb"],
@@ -211,6 +235,8 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
   async _saveConfig() {
     this.config.autoEscape = this.autoEscapeMode;
     this.config.richPaste = this.richPasteEnabled;
+    this.config.escapeChars = this.escapeChars;
+    this.config.assetSubdir = this.assetSubdir;
     console.log("[\u8F6C\u4E49] \u4FDD\u5B58\u914D\u7F6E:", JSON.stringify(this.config));
     try {
       await this.saveData(STORAGE_KEY, this.config);
@@ -396,6 +422,12 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
   _escapeText(text) {
     return text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/([{}[\]()+.\-!~|><])/g, "\\$&").replace(/\*/g, SAFE_ASTERISK).replace(/#/g, SAFE_HASH);
   }
+  /** 按字符返回其"安全替换"形式：*→\*，#→`#`（行内代码包裹），其它→\X 反斜杠前缀 */
+  _safeCharFor(ch) {
+    if (ch === "*") return SAFE_ASTERISK;
+    if (ch === "#") return SAFE_HASH;
+    return "\\" + ch;
+  }
   /* ==========================================================
      文本插入
      ========================================================== */
@@ -528,10 +560,11 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       if (e.isComposing || e.key === "Process") return;
       if (!this.autoEscapeMode) return;
       if (!e.target.closest?.(".protyle-wysiwyg")) return;
-      if (!["*", "#"].includes(e.key)) return;
+      if (e.target.closest?.(".code-block, [data-type='code-block'], code")) return;
+      if (!this.escapeChars.includes(e.key)) return;
       e.preventDefault();
       e.stopPropagation();
-      const safeChar = e.key === "#" ? SAFE_HASH : SAFE_ASTERISK;
+      const safeChar = this._safeCharFor(e.key);
       if (!document.execCommand("insertText", false, safeChar)) {
         const p = this._getActiveProtyle();
         if (p?.insert) p.insert(safeChar);
@@ -561,7 +594,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       event.preventDefault();
       const toastId = this._showToast("\u5904\u7406\u4E2D...", 0);
       try {
-        const md = await this._htmlToMarkdown(textHTML, detail.protyle);
+        const md = await this._pasteHtmlToMarkdown(textHTML, detail.protyle);
         this._removeToast(toastId);
         if (md?.trim()) {
           detail.resolve({ textPlain: md });
@@ -591,7 +624,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
           const html = await (await item.getType("text/html")).text();
           const tid = this._showToast("\u5904\u7406\u4E2D...", 0);
           try {
-            const md = await this._htmlToMarkdown(html, p);
+            const md = await this._pasteHtmlToMarkdown(html, p);
             this._removeToast(tid);
             if (md?.trim()) {
               this._restoreCursorPosition();
@@ -645,10 +678,158 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }).then((r) => r.json()).then((resp) => resp.code === 0 ? void 0 : Promise.reject(resp.msg));
   }
   /* ==========================================================
+     三·五、富粘贴图片子目录迁移
+     ========================================================== */
+  /** HTML → Markdown（含图片本地化），并依据设置把图片迁到 assets/<subdir>/ */
+  async _pasteHtmlToMarkdown(html, protyle) {
+    const md = await this._htmlToMarkdown(html, protyle);
+    if (!md || !this.assetSubdir) return md;
+    try {
+      return await this._relocateAssets(md, this.assetSubdir, protyle);
+    } catch (e) {
+      console.warn("[\u8F6C\u4E49] \u56FE\u7247\u5B50\u76EE\u5F55\u8FC1\u79FB\u5931\u8D25\uFF0C\u4FDD\u7559\u9ED8\u8BA4 assets:", e.message);
+      return md;
+    }
+  }
+  /**
+   * 把 Markdown 中 assets/ 下的图片迁到 assets/<subdir>/（思源内核 API）。
+   * 任何一步失败都会保留原引用，绝不破坏粘贴结果。
+   */
+  async _relocateAssets(md, subdir, protyle) {
+    const safe = (subdir || "").replace(/[^a-zA-Z0-9_\-]/g, "");
+    if (!safe) return md;
+    const re = /(!\[[^\]]*\]\(\s*)(\.\/)?assets\/([^)\s]+?)(\s*(?:"[^"]*")?\s*\))/g;
+    const matches = [...md.matchAll(re)];
+    if (!matches.length) return md;
+    let out = md;
+    for (const m of matches) {
+      const file = m[3];
+      const srcUrl = "/assets/" + encodeURI(file);
+      try {
+        const resp = await fetch(srcUrl);
+        if (!resp.ok) continue;
+        const blob = await resp.blob();
+        const destPath = `assets/${safe}/${file}`;
+        const fd = new FormData();
+        fd.append("path", destPath);
+        fd.append("file", blob, file);
+        const up = await fetch("/api/file/putFile", { method: "POST", body: fd }).then((r) => r.json()).catch(() => null);
+        if (up && up.code === 0) {
+          out = out.split(m[0]).join(m[1] + destPath + m[4]);
+          fetch("/api/file/removeFile?path=" + encodeURIComponent("assets/" + file), { method: "POST" }).catch(() => {
+          });
+        }
+      } catch (e) {
+        console.warn("[\u8F6C\u4E49] \u5355\u5F20\u56FE\u7247\u8FC1\u79FB\u5931\u8D25\uFF0C\u4FDD\u7559\u539F\u5F15\u7528:", file, e.message);
+      }
+    }
+    return out;
+  }
+  /* ==========================================================
+     三·六、字面文本块（多行）
+     ========================================================== */
+  _showLiteralBlockDialog(protyle) {
+    const mobile = _isMobile();
+    const p = protyle || this._getActiveProtyle();
+    if (!p) {
+      (0, import_siyuan.showMessage)("\u8BF7\u5148\u6253\u5F00\u6587\u6863", 3e3, "warning");
+      return;
+    }
+    this._saveCursorPosition(p);
+    const dialog = new import_siyuan.Dialog({
+      title: "\u5B57\u9762\u6587\u672C\u5757\uFF08\u591A\u884C\uFF09",
+      width: mobile ? "92%" : "560px",
+      content: `
+        <div style="padding:20px 24px 8px;">
+          <div class="lt-dialog-hint">
+            \u63D2\u5165\u4E00\u4E2A\u591A\u884C\u4EE3\u7801\u5757\uFF0C\u5185\u5BB9\u539F\u6837\u663E\u793A\u3001\u4E0D\u88AB Markdown \u6E32\u67D3\u3002<br/>
+            \u9002\u5408\u6D88\u9632\u8BBE\u5907\u578B\u53F7\u8868\u3001\u591A\u884C\u89C4\u683C\u3001\u957F\u4EE3\u7801\u7247\u6BB5\u7B49\u3002
+          </div>
+          <textarea id="lt-block-input" class="b3-text-field"
+                    style="width:100%;min-height:${mobile ? "160px" : "140px"};padding:${mobile ? "12px 14px" : "9px 12px"};font-size:${mobile ? "16px" : "14px"};resize:vertical;"
+                    placeholder="JTW-ZD-9911*2&#10;JTW-ZD-9912*4&#10;... (\u6BCF\u884C\u4E00\u6761\uFF0C\u539F\u6837\u4FDD\u7559 * # \u7B49\u7B26\u53F7)"></textarea>
+        </div>
+        <div class="b3-dialog__action" style="padding:12px 24px 16px;">
+          <button class="b3-button" id="ltb-cancel" style="margin-right:8px;">\u53D6\u6D88</button>
+          <button class="b3-button b3-button--primary" id="ltb-ok">\u63D2\u5165\u4EE3\u7801\u5757</button>
+        </div>`
+    });
+    const $ = (s) => dialog.element.querySelector(s);
+    const input = $("#lt-block-input");
+    setTimeout(() => input?.focus(), mobile ? 200 : 80);
+    const confirm = () => {
+      const text = input.value;
+      dialog.destroy();
+      this._clearSavedPosition();
+      if (!text.trim()) return;
+      this._insertCodeBlock(text, p);
+    };
+    $("#ltb-ok").addEventListener("click", confirm);
+    $("#ltb-cancel").addEventListener("click", () => {
+      dialog.destroy();
+      this._clearSavedPosition();
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        confirm();
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        dialog.destroy();
+        this._clearSavedPosition();
+      }
+    });
+  }
+  /** 在当前块后插入一个代码块（多行字面文本） */
+  async _insertCodeBlock(text, protyle) {
+    const p = protyle || this._getActiveProtyle() || this._savedProtyle;
+    if (!p) {
+      (0, import_siyuan.showMessage)("\u8BF7\u5148\u6253\u5F00\u6587\u6863", 3e3, "warning");
+      return;
+    }
+    const md = "```\n" + text.replace(/\n+$/, "") + "\n```\n";
+    const blockId = this._savedBlockId || this._getCurrentBlockId(p);
+    try {
+      if (blockId) {
+        await this._insertBlockAfter(blockId, md);
+      } else if (typeof p.insert === "function") {
+        p.insert(md);
+      } else {
+        throw new Error("no insert target");
+      }
+      (0, import_siyuan.showMessage)("\u5DF2\u63D2\u5165\u5B57\u9762\u6587\u672C\u5757 \u2705", 2e3, "info");
+    } catch (err) {
+      console.error("[\u8F6C\u4E49] \u63D2\u5165\u4EE3\u7801\u5757\u5931\u8D25:", err);
+      (0, import_siyuan.showMessage)("\u63D2\u5165\u5931\u8D25\uFF0C\u5DF2\u9000\u56DE\u7126\u70B9\u63D2\u5165", 3e3, "error");
+      this._insertTextAtFocus(md, p);
+    }
+  }
+  /* ==========================================================
+     三·七、反字面（还原为普通文本）
+     ========================================================== */
+  _unescapeSelection() {
+    const sel = window.getSelection();
+    const text = sel ? sel.toString() : "";
+    if (!text || !text.trim()) {
+      (0, import_siyuan.showMessage)("\u8BF7\u5148\u9009\u4E2D\u8981\u8FD8\u539F\u7684\u6587\u672C", 2500, "warning");
+      return;
+    }
+    const unescaped = text.replace(/\\([*#_~`+\-!|><[\](){}])/g, "$1");
+    this._replaceSelection(unescaped);
+    (0, import_siyuan.showMessage)("\u5DF2\u8FD8\u539F\u4E3A\u666E\u901A\u6587\u672C \u2705", 2e3, "info");
+  }
+  /* ==========================================================
      四、设置面板
      ========================================================== */
   _showSettingsDialog() {
     const mobile = _isMobile();
+    const escapeCandidates = ["*", "#", "_", "~", ">", "[", "]", "|", "+", "!"];
+    const charHints = { "*": "&#92;*", "#": "&#96;#&#96;", "_": "&#92;_", "~": "&#92;~", ">": "&#92;>", "[": "&#92;[", "]": "&#92;]", "|": "&#92;|", "+": "&#92;+", "!": "&#92;!" };
+    const charChecks = escapeCandidates.map((c) => {
+      const checked = this.escapeChars.includes(c) ? "checked" : "";
+      return '<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin:0 10px 6px 0;"><input type="checkbox" name="cfg-escape-char" value="' + c + '" ' + checked + "/><span><code>" + c + "</code> \u2192 <code>" + charHints[c] + "</code></span></label>";
+    }).join("");
     const dialog = new import_siyuan.Dialog({
       title: "\u8F6C\u4E49 \xB7 \u8BBE\u7F6E",
       width: mobile ? "92%" : "480px",
@@ -659,14 +840,26 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
             <input type="checkbox" id="cfg-auto-escape" ${this.autoEscapeMode ? "checked" : ""}/>
             <span>\u5F00\u542F\u81EA\u52A8\u8F6C\u4E49\uFF08* \u2192 \\* \uFF0C# \u2192 \u884C\u5185\u4EE3\u7801\uFF09</span>
           </label>
+          <div style="margin:4px 0;color:var(--b3-empty-color);">\u81EA\u52A8\u8F6C\u4E49\u7684\u5B57\u7B26\uFF08\u9ED8\u8BA4 * \u548C #\uFF09\uFF1A</div>
+          <div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">${charChecks}</div>
+          <div style="font-size:12px;color:var(--b3-empty-color);margin-bottom:4px;">
+            # \u7528\u884C\u5185\u4EE3\u7801\u5305\u88F9\uFF08\u6D45\u7070\u80CC\u666F\uFF09\uFF0C\u5176\u5B83\u7528\u53CD\u659C\u6760\u524D\u7F00\uFF1B\u4EE3\u7801\u5757\u5185\u8F93\u5165\u7684\u5B57\u7B26\u4E0D\u53D7\u5F71\u54CD
+          </div>
 
           <div class="lt-settings-divider"></div>
 
           <div class="lt-settings-section">\u5BCC\u6587\u672C\u7C98\u8D34</div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
             <input type="checkbox" id="cfg-rich-paste" ${this.richPasteEnabled ? "checked" : ""}/>
             <span>\u81EA\u52A8\u62E6\u622A\u7C98\u8D34\uFF0C\u8C03\u7528\u5185\u6838 API \u672C\u5730\u5316\u56FE\u7247</span>
           </label>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span>\u56FE\u7247\u4FDD\u5B58\u5B50\u76EE\u5F55\uFF1A</span>
+            <input type="text" id="cfg-asset-subdir" class="b3-text-field fn__size200" value="${this.assetSubdir}" placeholder="\u7559\u7A7A=\u9ED8\u8BA4 assets/"/>
+          </div>
+          <div style="font-size:12px;color:var(--b3-empty-color);margin-bottom:4px;">
+            \u5982\u586B <code>wechat</code>\uFF0C\u56FE\u7247\u5B58\u5230 <code>assets/wechat/</code>\uFF08\u4EC5\u5B57\u6BCD\u6570\u5B57\u4E0B\u5212\u7EBF\u8FDE\u5B57\u7B26\uFF09
+          </div>
 
           <div class="lt-settings-warn">
             <b>\u8BF4\u660E</b><br/>
@@ -691,6 +884,9 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
         this._updateEscapeButton();
       }
       this.richPasteEnabled = newRP;
+      const newChars = [...dialog.element.querySelectorAll('input[name="cfg-escape-char"]:checked')].map((cb) => cb.value);
+      this.escapeChars = newChars.length ? newChars : ["*", "#"];
+      this.assetSubdir = ($("#cfg-asset-subdir").value || "").trim();
       await this._saveConfig();
       dialog.destroy();
       (0, import_siyuan.showMessage)("\u5DF2\u4FDD\u5B58", 2e3, "info");
