@@ -1,6 +1,6 @@
 # 转义 / Escape
 
-[![Version](https://img.shields.io/badge/version-2.7.0-brightgreen)](https://github.com/zfb517/siyuan-plugin-literal-text)
+[![Version](https://img.shields.io/badge/version-2.7.1-brightgreen)](https://github.com/zfb517/siyuan-plugin-literal-text)
 [![Min App](https://img.shields.io/badge/siyuan-%E2%89%A5%203.7.0-blue)](https://github.com/siyuan-note/siyuan)
 [![Platform](https://img.shields.io/badge/platform-windows%20%7C%20macOS%20%7C%20linux%20%7C%20harmony%20%7C%20mobile-lightgrey)](https://github.com/zfb517/siyuan-plugin-literal-text)
 
@@ -12,10 +12,19 @@
 
 ### 1. 字面文本输入
 
-输入一段文本，原样插入，不被 Markdown 渲染。
+输入一段文本，原样插入，不被 Markdown 渲染。点击 `Ctrl+Shift+L`（或斜杠命令）会弹出输入窗，提供两种模式：
+
+- **行内代码**（默认）：整体包裹为 `` `代码` ``，浅灰底框，适合含 `*` `#` 的型号/规格。
+- **转义字符**：对文本做 Markdown 转义后插入，所见即所得地显示为纯文本，例如：
+
+| 输入 | 实际插入 | 效果 |
+|------|---------|------|
+| `*` | `\*` | 不被渲染为斜体/粗体 |
+| `#` | `` `#` `` | 不被渲染为标签/标题 |
+| `a*b#c` | `` a`#`b\*c `` | 混合符号均被保护 |
 
 - **快捷键**：`Ctrl+Shift+L`
-- **斜杠命令**：`/字面` 或 `/literal`
+- **斜杠命令**：`/字面` `/literal`（行内代码）、`/转义` `/escape`（转义字符）
 
 ### 2. 自动转义（默认开启）
 
@@ -30,6 +39,8 @@
 - **状态指示**：顶部工具栏第三个按钮（绿色盾牌=ON / 灰色空心=OFF）
 
 > **提示**：`#` 字符在思源 Lute 引擎中用 `\#` 或零宽空格均无法阻止解析，因此采用行内代码包裹 `` `#` ``，视觉上会有浅灰背景，但这是唯一可靠方案。
+
+> **兼容性提示**：自动转义监听已对输入法合成（中文/日文等）做跳过处理，使用输入法打字时不会被误拦截。
 
 ### 3. 富文本粘贴
 
@@ -110,6 +121,7 @@ esbuild-build.js    # 构建脚本
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| 2.7.1 | 2026-07-07 | 修复「转义字符」模式下 `#` 被二次转义为 `\#` 的 bug；自动转义增加输入法合成守卫；移除未使用的 jimp/sharp 依赖 |
 | 2.7.0 | 2026-07-04 | 代码质量清理，SVG 图标跟随主题 |
 | 2.6.0 | 2026-07-04 | 自动转义默认开启，移动端兼容增强 |
 | 2.5.0 | 2026-07-04 | 修复顶栏图标不显示（addIcons + Symbol ID） |

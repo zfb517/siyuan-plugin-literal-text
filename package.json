@@ -1,6 +1,6 @@
 {
   "name": "siyuan-plugin-literal-text",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "字面文本输入 + 富文本粘贴（自动下载图片）",
   "scripts": {
     "build": "node esbuild-build.js",
