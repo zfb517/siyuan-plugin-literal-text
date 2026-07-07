@@ -76,7 +76,27 @@ const _isMobile = () => {
 /* ============================================================
    插件主类
    ============================================================ */
+interface LiteralTextConfig {
+  autoEscape?: boolean;
+  richPaste?: boolean;
+  escapeChars?: string[];
+  assetSubdir?: string;
+}
+
 export default class LiteralTextPlugin extends Plugin {
+  /* ---------- 实例属性（供严格模式类型检查） ---------- */
+  config!: LiteralTextConfig;
+  autoEscapeMode!: boolean;
+  richPasteEnabled!: boolean;
+  escapeChars!: string[];
+  assetSubdir!: string;
+  pasteHandler!: ((event: any) => Promise<void>) | null;
+  _escapeHandler!: ((e: any) => void) | null;
+  _escapeTopBarBtn!: any;
+  _savedRange!: Range | null;
+  _savedBlockId!: string | null;
+  _savedProtyle!: any;
+  protyleSlash!: any;
 
   /* ---------- 生命周期 ---------- */
   async onload() {
@@ -277,7 +297,7 @@ export default class LiteralTextPlugin extends Plugin {
         position: "right",
         callback: () => this._selectionToLiteral("escape"),
       });
-    } catch (e) {
+    } catch (e: any) {
       console.warn("[转义] 顶栏按钮注册失败（移动端可能不支持）:", e.message);
     }
   }
@@ -304,7 +324,7 @@ export default class LiteralTextPlugin extends Plugin {
     console.log("[转义] 保存配置:", JSON.stringify(this.config));
     try {
       await this.saveData(STORAGE_KEY, this.config);
-    } catch (err) {
+    } catch (err: any) {
       console.error("[转义] 配置保存失败:", err);
     }
   }
@@ -325,12 +345,12 @@ export default class LiteralTextPlugin extends Plugin {
           ? "自动转义：已开启（点击关闭）"
           : "自动转义：已关闭（点击开启）";
       }
-    } catch (e) { /* 静默 */ }
+    } catch (e: any) { /* 静默 */ }
   }
 
-  _getActiveProtyle() {
-    try { const p = getActiveEditor(); if (p) return p; } catch (e) {}
-    try { const editors = getAllEditor(); if (editors?.length) return editors[0]; } catch (e) {}
+  _getActiveProtyle(): any {
+    try { const p = getActiveEditor(); if (p) return p; } catch (e: any) {}
+    try { const editors = getAllEditor(); if (editors?.length) return editors[0]; } catch (e: any) {}
     return null;
   }
 
@@ -343,11 +363,11 @@ export default class LiteralTextPlugin extends Plugin {
     try {
       const range = p.toolbar?.range;
       if (range?.cloneRange) { this._savedRange = range.cloneRange(); this._savedProtyle = p; return; }
-    } catch (e) {}
+    } catch (e: any) {}
     try {
       const sel = window.getSelection();
-      if (sel?.rangeCount > 0) { this._savedRange = sel.getRangeAt(0).cloneRange(); this._savedProtyle = p; return; }
-    } catch (e) {}
+      if (sel && sel.rangeCount > 0) { this._savedRange = sel.getRangeAt(0).cloneRange(); this._savedProtyle = p; return; }
+    } catch (e: any) {}
     this._savedBlockId = this._getCurrentBlockId(p);
     this._savedProtyle = p;
   }
@@ -362,7 +382,7 @@ export default class LiteralTextPlugin extends Plugin {
         const sel = window.getSelection();
         if (sel) { sel.removeAllRanges(); sel.addRange(this._savedRange); return true; }
       }
-    } catch (e) {}
+    } catch (e: any) {}
     this._clearSavedPosition();
     return false;
   }
@@ -372,10 +392,10 @@ export default class LiteralTextPlugin extends Plugin {
   /* ==========================================================
      一、字面文本输入
      ========================================================== */
-  _handleQuickInput(protyle) {
+  _handleQuickInput(protyle?) {
     const p = protyle || this._getActiveProtyle();
-    if (!p) { showMessage("请先打开文档", 3000, "warning"); return; }
-    const sel = window.getSelection().toString().trim();
+    if (!p) { showMessage("请先打开文档", 3000, "warning" as any); return; }
+    const sel = window.getSelection()?.toString().trim() ?? "";
     if (sel) {
       this._insertTextAtFocus("`" + sel.replace(/`/g, "\\`") + "`", p);
       showMessage("已包裹为行内代码", 2000, "info");
@@ -427,7 +447,7 @@ export default class LiteralTextPlugin extends Plugin {
     const confirm = () => {
       const text = input.value.trim();
       if (!text) { dialog.destroy(); this._clearSavedPosition(); return; }
-      const mode = dialog.element.querySelector('input[name="lt-mode"]:checked')?.value || "code";
+      const mode = (dialog.element.querySelector('input[name="lt-mode"]:checked') as HTMLInputElement | null)?.value || "code";
       this._restoreAndInsert(text, mode, protyle);
       dialog.destroy();
     };
@@ -444,7 +464,7 @@ export default class LiteralTextPlugin extends Plugin {
     const restored = this._restoreCursorPosition();
     this._clearSavedPosition();
     const p = protyle || this._savedProtyle || this._getActiveProtyle();
-    if (!p) { showMessage("请先打开文档", 3000, "warning"); return; }
+    if (!p) { showMessage("请先打开文档", 3000, "warning" as any); return; }
 
     if (mode === "code") {
       this._insertTextAtFocus("`" + text.replace(/`/g, "\\`") + "`", p, restored);
@@ -475,10 +495,10 @@ export default class LiteralTextPlugin extends Plugin {
      ========================================================== */
   _insertTextAtFocus(text, protyle, cursorRestored = false) {
     const p = protyle || this._getActiveProtyle();
-    if (!p) { showMessage("请先打开文档", 3000, "warning"); return; }
+    if (!p) { showMessage("请先打开文档", 3000, "warning" as any); return; }
 
     if (cursorRestored) {
-      try { if (document.execCommand("insertText", false, text)) return; } catch (e) {}
+      try { if (document.execCommand("insertText", false, text)) return; } catch (e: any) {}
     }
 
     try {
@@ -486,20 +506,20 @@ export default class LiteralTextPlugin extends Plugin {
       if (wysiwyg) wysiwyg.focus({ preventScroll: true });
       setTimeout(() => {
         if (typeof p.insert === "function") {
-          try { p.insert(text); return; } catch (e) {}
+          try { p.insert(text); return; } catch (e: any) {}
         }
         this._fallbackInsert(text);
       }, 0);
       return;
-    } catch (e) {}
+    } catch (e: any) {}
 
     this._fallbackInsert(text);
   }
 
   _insertTextSync(text) {
-    try { if (document.execCommand("insertText", false, text)) return true; } catch (e) {}
+    try { if (document.execCommand("insertText", false, text)) return true; } catch (e: any) {}
     const p = this._getActiveProtyle();
-    if (p?.insert) { try { p.insert(text); return true; } catch (e) {} }
+    if (p?.insert) { try { p.insert(text); return true; } catch (e: any) {} }
     return false;
   }
 
@@ -517,9 +537,9 @@ export default class LiteralTextPlugin extends Plugin {
     const sel = window.getSelection();
     const p = this._getActiveProtyle();
     try {
-      const wysiwyg = p?.element?.querySelector(".protyle-wysiwyg");
+      const wysiwyg = (p as any)?.element?.querySelector(".protyle-wysiwyg");
       if (wysiwyg) wysiwyg.focus({ preventScroll: true });
-    } catch (e) {}
+    } catch (e: any) {}
     if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
       if (document.execCommand("insertText", false, text)) return true;
     }
@@ -533,7 +553,7 @@ export default class LiteralTextPlugin extends Plugin {
     const sel = window.getSelection();
     const text = sel ? sel.toString() : "";
     if (!text || !text.trim()) {
-      showMessage("请先选中要转换的文本", 2500, "warning");
+      showMessage("请先选中要转换的文本", 2500, "warning" as any);
       return;
     }
     const literal = mode === "code"
@@ -548,12 +568,12 @@ export default class LiteralTextPlugin extends Plugin {
     const sel = window.getSelection();
     const text = sel ? sel.toString() : "";
     if (!text || !text.trim()) {
-      showMessage("请先选中要转换的文本", 2500, "warning");
+      showMessage("请先选中要转换的文本", 2500, "warning" as any);
       return;
     }
     let out = "";
     for (const ch of text) {
-      const code = ch.codePointAt(0);
+      const code = ch.codePointAt(0) ?? 0;
       if (target === "toHalf") {
         if (code === 0x3000) out += " ";
         else if (code >= 0xff01 && code <= 0xff5e) out += String.fromCodePoint(code - 0xfee0);
@@ -649,7 +669,7 @@ export default class LiteralTextPlugin extends Plugin {
         } else {
           detail.resolve({ textPlain: textPlain });
         }
-      } catch (err) {
+      } catch (err: any) {
         this._removeToast(toastId);
         detail.resolve({ textPlain: textPlain });
       }
@@ -657,9 +677,9 @@ export default class LiteralTextPlugin extends Plugin {
     this.eventBus.on("paste", this.pasteHandler);
   }
 
-  async _triggerRichPaste(protyle) {
+  async _triggerRichPaste(protyle?) {
     const p = protyle || this._getActiveProtyle();
-    if (!p) { showMessage("请先打开文档", 3000, "warning"); return; }
+    if (!p) { showMessage("请先打开文档", 3000, "warning" as any); return; }
     this._saveCursorPosition(p);
 
     // 移动端可能不支持 navigator.clipboard.read()（需要 HTTPS + 用户手势）
@@ -679,7 +699,7 @@ export default class LiteralTextPlugin extends Plugin {
               this._insertTextAtFocus(md, p, true);
               showMessage("粘贴完成 ✅", 2000, "info");
             } else { this._clearSavedPosition(); }
-          } catch (err) {
+          } catch (err: any) {
             this._removeToast(tid);
             this._clearSavedPosition();
             showMessage("失败:" + err.message, 4000, "error");
@@ -688,8 +708,8 @@ export default class LiteralTextPlugin extends Plugin {
         }
       }
       this._clearSavedPosition();
-      showMessage("剪贴板无 HTML 内容", 3000, "warning");
-    } catch (err) {
+      showMessage("剪贴板无 HTML 内容", 3000, "warning" as any);
+    } catch (err: any) {
       this._clearSavedPosition();
       console.warn("[转义] clipboard.read 失败:", err.message);
       showMessage(
@@ -735,7 +755,7 @@ export default class LiteralTextPlugin extends Plugin {
     if (!md || !this.assetSubdir) return md;
     try {
       return await this._relocateAssets(md, this.assetSubdir, protyle);
-    } catch (e) {
+    } catch (e: any) {
       console.warn("[转义] 图片子目录迁移失败，保留默认 assets:", e.message);
       return md;
     }
@@ -769,7 +789,7 @@ export default class LiteralTextPlugin extends Plugin {
           // 清理原位置图片
           fetch("/api/file/removeFile?path=" + encodeURIComponent("assets/" + file), { method: "POST" }).catch(() => {});
         }
-      } catch (e) {
+      } catch (e: any) {
         console.warn("[转义] 单张图片迁移失败，保留原引用:", file, e.message);
       }
     }
@@ -779,10 +799,10 @@ export default class LiteralTextPlugin extends Plugin {
   /* ==========================================================
      三·六、字面文本块（多行）
      ========================================================== */
-  _showLiteralBlockDialog(protyle) {
+  _showLiteralBlockDialog(protyle?) {
     const mobile = _isMobile();
     const p = protyle || this._getActiveProtyle();
-    if (!p) { showMessage("请先打开文档", 3000, "warning"); return; }
+    if (!p) { showMessage("请先打开文档", 3000, "warning" as any); return; }
     this._saveCursorPosition(p);
 
     const dialog = new Dialog({
@@ -827,7 +847,7 @@ export default class LiteralTextPlugin extends Plugin {
   /** 在当前块后插入一个代码块（多行字面文本） */
   async _insertCodeBlock(text, protyle) {
     const p = protyle || this._getActiveProtyle() || this._savedProtyle;
-    if (!p) { showMessage("请先打开文档", 3000, "warning"); return; }
+    if (!p) { showMessage("请先打开文档", 3000, "warning" as any); return; }
     const md = "```\n" + text.replace(/\n+$/, "") + "\n```\n";
     const blockId = this._savedBlockId || this._getCurrentBlockId(p);
     try {
@@ -839,7 +859,7 @@ export default class LiteralTextPlugin extends Plugin {
         throw new Error("no insert target");
       }
       showMessage("已插入字面文本块 ✅", 2000, "info");
-    } catch (err) {
+    } catch (err: any) {
       console.error("[转义] 插入代码块失败:", err);
       showMessage("插入失败，已退回焦点插入", 3000, "error");
       this._insertTextAtFocus(md, p);
@@ -853,7 +873,7 @@ export default class LiteralTextPlugin extends Plugin {
     const sel = window.getSelection();
     const text = sel ? sel.toString() : "";
     if (!text || !text.trim()) {
-      showMessage("请先选中要还原的文本", 2500, "warning");
+      showMessage("请先选中要还原的文本", 2500, "warning" as any);
       return;
     }
     // 去掉紧接在特殊字符前的转义反斜杠；选区替换会同时清除行内代码格式（unwrap）
@@ -931,7 +951,7 @@ export default class LiteralTextPlugin extends Plugin {
         this._updateEscapeButton();
       }
       this.richPasteEnabled = newRP;
-      const newChars = [...dialog.element.querySelectorAll('input[name="cfg-escape-char"]:checked')].map((cb) => cb.value);
+      const newChars = [...dialog.element.querySelectorAll('input[name="cfg-escape-char"]:checked')].map((cb) => (cb as HTMLInputElement).value);
       this.escapeChars = newChars.length ? newChars : ["*", "#"];
       this.assetSubdir = ($("#cfg-asset-subdir").value || "").trim();
       await this._saveConfig();
@@ -945,13 +965,13 @@ export default class LiteralTextPlugin extends Plugin {
   /* ==========================================================
      工具方法
      ========================================================== */
-  _getCurrentBlockId(protyle) {
+  _getCurrentBlockId(protyle?) {
     try {
       const sel = window.getSelection();
       if (!sel?.rangeCount) return null;
       const node = sel.getRangeAt(0).startContainer.parentElement;
       return node?.closest?.("[data-node-id]")?.getAttribute("data-node-id") || null;
-    } catch (e) { return null; }
+    } catch (e: any) { return null; }
   }
 
   _showToast(msg, dur) {

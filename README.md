@@ -1,6 +1,6 @@
 # 转义 / Escape
 
-![Version](https://img.shields.io/badge/version-2.8.0-brightgreen)
+![Version](https://img.shields.io/badge/version-2.8.1-brightgreen)
 
 ![Min App](https://img.shields.io/badge/siyuan-%E2%89%A5%203.7.0-blue)
 
@@ -159,10 +159,17 @@ esbuild-build.js    # 构建脚本
 
 ---
 
+## 开发
+
+- 构建（esbuild 输出 CJS 到根目录 `index.js`）：`npm run build`
+- 类型检查（严格模式，零错误交付）：`npm run check`（`tsc --noEmit`）
+- 代码本体为 `src/index.ts`，`src/globals.d.ts` 声明了思源运行时注入的全局 `$`（jQuery）类型
+
 ## 版本历史
 
 | 版本    | 日期         | 变更                                                                   |
 | ----- | ---------- | -------------------------------------------------------------------- |
+| 2.8.1 | 2026-07-08 | 源码由纯 JS 迁移至 TypeScript（esbuild 仍输出 CJS 产物）；`tsc --noEmit` 严格类型检查零错误，新增 `npm run check` 脚本；构建与运行行为不变 |
 | 2.8.0 | 2026-07-07 | 新增「字面文本块」（多行代码块，/字面块）、自动转义字符集可配置 + 代码块内豁免、反字面（还原行内代码/转义，/反字面）、富粘贴图片保存子目录可配 |
 | 2.7.2 | 2026-07-07 | 新增「选区转字面量」(L1)：选中文本一键转为行内代码/转义纯文本，含顶栏按钮与斜杠命令；新增「字符全半角转换」(L2)：选中文本全角⇄半角互转，含斜杠命令 |
 | 2.7.1 | 2026-07-07 | 修复「转义字符」模式下 `#` 被二次转义为 `\#` 的 bug；自动转义增加输入法合成守卫；移除未使用的 jimp/sharp 依赖 |

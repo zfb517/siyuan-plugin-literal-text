@@ -4,7 +4,7 @@ const esbuild = require("esbuild");
 
 async function build() {
   const ctx = await esbuild.context({
-    entryPoints: ["src/index.js"],
+    entryPoints: ["src/index.ts"],
     bundle: true,
     format: "cjs",          // 关键：CommonJS 格式，module.exports
     outfile: "index.js",    // 直接输出到根目录

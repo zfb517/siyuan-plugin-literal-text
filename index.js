@@ -1,3 +1,4 @@
+"use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -16,7 +17,7 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/index.js
+// src/index.ts
 var src_exports = {};
 __export(src_exports, {
   default: () => LiteralTextPlugin
@@ -289,7 +290,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     try {
       const sel = window.getSelection();
-      if (sel?.rangeCount > 0) {
+      if (sel && sel.rangeCount > 0) {
         this._savedRange = sel.getRangeAt(0).cloneRange();
         this._savedProtyle = p;
         return;
@@ -331,7 +332,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       (0, import_siyuan.showMessage)("\u8BF7\u5148\u6253\u5F00\u6587\u6863", 3e3, "warning");
       return;
     }
-    const sel = window.getSelection().toString().trim();
+    const sel = window.getSelection()?.toString().trim() ?? "";
     if (sel) {
       this._insertTextAtFocus("`" + sel.replace(/`/g, "\\`") + "`", p);
       (0, import_siyuan.showMessage)("\u5DF2\u5305\u88F9\u4E3A\u884C\u5185\u4EE3\u7801", 2e3, "info");
@@ -525,7 +526,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     let out = "";
     for (const ch of text) {
-      const code = ch.codePointAt(0);
+      const code = ch.codePointAt(0) ?? 0;
       if (target === "toHalf") {
         if (code === 12288) out += " ";
         else if (code >= 65281 && code <= 65374) out += String.fromCodePoint(code - 65248);
