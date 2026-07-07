@@ -86,6 +86,26 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       hotkey: "\u21E7\u2318V",
       callback: () => this._triggerRichPaste()
     });
+    this.addCommand({
+      langKey: "selectionToLiteral",
+      langText: "\u9009\u533A\u8F6C\u5B57\u9762\u91CF\uFF08\u884C\u5185\u4EE3\u7801\uFF09",
+      callback: () => this._selectionToLiteral("code")
+    });
+    this.addCommand({
+      langKey: "selectionToEscape",
+      langText: "\u9009\u533A\u8F6C\u8F6C\u4E49\uFF08\u7EAF\u6587\u672C\uFF09",
+      callback: () => this._selectionToLiteral("escape")
+    });
+    this.addCommand({
+      langKey: "convertToHalf",
+      langText: "\u5168\u89D2\u8F6C\u534A\u89D2",
+      callback: () => this._convertWidth("toHalf")
+    });
+    this.addCommand({
+      langKey: "convertToFull",
+      langText: "\u534A\u89D2\u8F6C\u5168\u89D2",
+      callback: () => this._convertWidth("toFull")
+    });
     this.protyleSlash = [
       {
         filter: ["\u5B57\u9762\u6587\u672C", "literal", "zmbw"],
@@ -110,6 +130,30 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
         html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u63D2\u4EF6\u8BBE\u7F6E</span></div>',
         id: "settings",
         callback: () => this._showSettingsDialog()
+      },
+      {
+        filter: ["\u9009\u533A\u8F6C\u5B57\u9762", "selection literal", "xqzmb"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u9009\u533A\u8F6C\u5B57\u9762\u91CF</span><span class="b3-list-item__meta">\u9009\u4E2D\u6587\u672C\u2192\u884C\u5185\u4EE3\u7801</span></div>',
+        id: "selection-literal",
+        callback: () => this._selectionToLiteral("code")
+      },
+      {
+        filter: ["\u9009\u533A\u8F6C\u8F6C\u4E49", "selection escape", "xqzzy"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u9009\u533A\u8F6C\u8F6C\u4E49</span><span class="b3-list-item__meta">\u9009\u4E2D\u6587\u672C\u2192\u7EAF\u6587\u672C</span></div>',
+        id: "selection-escape",
+        callback: () => this._selectionToLiteral("escape")
+      },
+      {
+        filter: ["\u5168\u89D2\u8F6C\u534A\u89D2", "tohalf", "qjzhb"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u5168\u89D2\u8F6C\u534A\u89D2</span><span class="b3-list-item__meta">\uFF11\uFF0E\uFF15\u21921.5</span></div>',
+        id: "to-half",
+        callback: () => this._convertWidth("toHalf")
+      },
+      {
+        filter: ["\u534A\u89D2\u8F6C\u5168\u89D2", "tofull", "bjzqj"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u534A\u89D2\u8F6C\u5168\u89D2</span><span class="b3-list-item__meta">1.5\u2192\uFF11\uFF0E\uFF15</span></div>',
+        id: "to-full",
+        callback: () => this._convertWidth("toFull")
       }
     ];
     this._initPaste();
@@ -140,6 +184,12 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
         title: escTitle,
         position: "right",
         callback: () => this._toggleAutoEscape()
+      });
+      this.addTopBar({
+        icon: ICON_CODE_ID,
+        title: "\u9009\u533A\u8F6C\u8F6C\u4E49\uFF08\u9009\u4E2D\u6587\u672C\u2192\u7EAF\u6587\u672C\u5B57\u9762\u91CF\uFF09",
+        position: "right",
+        callback: () => this._selectionToLiteral("escape")
       });
     } catch (e) {
       console.warn("[\u8F6C\u4E49] \u9876\u680F\u6309\u94AE\u6CE8\u518C\u5931\u8D25\uFF08\u79FB\u52A8\u7AEF\u53EF\u80FD\u4E0D\u652F\u6301\uFF09:", e.message);
@@ -339,9 +389,12 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     if (mode === "code") {
       this._insertTextAtFocus("`" + text.replace(/`/g, "\\`") + "`", p, restored);
     } else {
-      const escaped = text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/([{}[\]()+.\-!~|><])/g, "\\$&").replace(/\*/g, SAFE_ASTERISK).replace(/#/g, SAFE_HASH);
-      this._insertTextAtFocus(escaped, p, restored);
+      this._insertTextAtFocus(this._escapeText(text), p, restored);
     }
+  }
+  /** 转义模式字符安全替换（与字面文本输入共用） */
+  _escapeText(text) {
+    return text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/([{}[\]()+.\-!~|><])/g, "\\$&").replace(/\*/g, SAFE_ASTERISK).replace(/#/g, SAFE_HASH);
   }
   /* ==========================================================
      文本插入
@@ -399,6 +452,60 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       return;
     }
     (0, import_siyuan.showMessage)("\u63D2\u5165\u5931\u8D25", 3e3, "error");
+  }
+  /* ==========================================================
+     选区转字面量 / 字符全半角转换（L1 / L2）
+     ========================================================== */
+  /** 用 text 替换当前选区（execCommand 会替换已选内容）；无选区时退化为焦点插入 */
+  _replaceSelection(text) {
+    const sel = window.getSelection();
+    const p = this._getActiveProtyle();
+    try {
+      const wysiwyg = p?.element?.querySelector(".protyle-wysiwyg");
+      if (wysiwyg) wysiwyg.focus({ preventScroll: true });
+    } catch (e) {
+    }
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+      if (document.execCommand("insertText", false, text)) return true;
+    }
+    this._insertTextAtFocus(text, p);
+    return false;
+  }
+  /** L1：将当前选区转为字面量（code=行内代码，escape=纯文本转义） */
+  _selectionToLiteral(mode) {
+    const sel = window.getSelection();
+    const text = sel ? sel.toString() : "";
+    if (!text || !text.trim()) {
+      (0, import_siyuan.showMessage)("\u8BF7\u5148\u9009\u4E2D\u8981\u8F6C\u6362\u7684\u6587\u672C", 2500, "warning");
+      return;
+    }
+    const literal = mode === "code" ? "`" + text.replace(/`/g, "\\`") + "`" : this._escapeText(text);
+    this._replaceSelection(literal);
+    (0, import_siyuan.showMessage)(mode === "code" ? "\u5DF2\u8F6C\u4E3A\u884C\u5185\u4EE3\u7801 \u2705" : "\u5DF2\u8F6C\u4E49\u4E3A\u7EAF\u6587\u672C \u2705", 2e3, "info");
+  }
+  /** L2：全角 ⇄ 半角 字符转换（target: toHalf / toFull） */
+  _convertWidth(target) {
+    const sel = window.getSelection();
+    const text = sel ? sel.toString() : "";
+    if (!text || !text.trim()) {
+      (0, import_siyuan.showMessage)("\u8BF7\u5148\u9009\u4E2D\u8981\u8F6C\u6362\u7684\u6587\u672C", 2500, "warning");
+      return;
+    }
+    let out = "";
+    for (const ch of text) {
+      const code = ch.codePointAt(0);
+      if (target === "toHalf") {
+        if (code === 12288) out += " ";
+        else if (code >= 65281 && code <= 65374) out += String.fromCodePoint(code - 65248);
+        else out += ch;
+      } else {
+        if (code === 32) out += "\u3000";
+        else if (code >= 33 && code <= 126) out += String.fromCodePoint(code + 65248);
+        else out += ch;
+      }
+    }
+    this._replaceSelection(out);
+    (0, import_siyuan.showMessage)(target === "toHalf" ? "\u5168\u89D2\u5DF2\u8F6C\u534A\u89D2 \u2705" : "\u534A\u89D2\u5DF2\u8F6C\u5168\u89D2 \u2705", 2e3, "info");
   }
   /* ==========================================================
      二、自动转义

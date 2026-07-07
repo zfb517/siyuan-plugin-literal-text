@@ -125,6 +125,26 @@ export default class LiteralTextPlugin extends Plugin {
       hotkey: "⇧⌘V",
       callback: () => this._triggerRichPaste(),
     });
+    this.addCommand({
+      langKey: "selectionToLiteral",
+      langText: "选区转字面量（行内代码）",
+      callback: () => this._selectionToLiteral("code"),
+    });
+    this.addCommand({
+      langKey: "selectionToEscape",
+      langText: "选区转转义（纯文本）",
+      callback: () => this._selectionToLiteral("escape"),
+    });
+    this.addCommand({
+      langKey: "convertToHalf",
+      langText: "全角转半角",
+      callback: () => this._convertWidth("toHalf"),
+    });
+    this.addCommand({
+      langKey: "convertToFull",
+      langText: "半角转全角",
+      callback: () => this._convertWidth("toFull"),
+    });
 
     /* --- 2. 斜杠命令 --- */
     this.protyleSlash = [
@@ -151,6 +171,30 @@ export default class LiteralTextPlugin extends Plugin {
         html: '<div class="b3-list-item__first"><span class="b3-list-item__text">插件设置</span></div>',
         id: "settings",
         callback: () => this._showSettingsDialog(),
+      },
+      {
+        filter: ["选区转字面", "selection literal", "xqzmb"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">选区转字面量</span><span class="b3-list-item__meta">选中文本→行内代码</span></div>',
+        id: "selection-literal",
+        callback: () => this._selectionToLiteral("code"),
+      },
+      {
+        filter: ["选区转转义", "selection escape", "xqzzy"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">选区转转义</span><span class="b3-list-item__meta">选中文本→纯文本</span></div>',
+        id: "selection-escape",
+        callback: () => this._selectionToLiteral("escape"),
+      },
+      {
+        filter: ["全角转半角", "tohalf", "qjzhb"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">全角转半角</span><span class="b3-list-item__meta">１．５→1.5</span></div>',
+        id: "to-half",
+        callback: () => this._convertWidth("toHalf"),
+      },
+      {
+        filter: ["半角转全角", "tofull", "bjzqj"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">半角转全角</span><span class="b3-list-item__meta">1.5→１．５</span></div>',
+        id: "to-full",
+        callback: () => this._convertWidth("toFull"),
       },
     ];
 
@@ -195,6 +239,14 @@ export default class LiteralTextPlugin extends Plugin {
         title: escTitle,
         position: "right",
         callback: () => this._toggleAutoEscape(),
+      });
+
+      // ★ 按钮4：选区转转义（L1，纯文本字面量；行内代码可由 Ctrl+Shift+L / 第一个按钮完成）
+      this.addTopBar({
+        icon: ICON_CODE_ID,
+        title: "选区转转义（选中文本→纯文本字面量）",
+        position: "right",
+        callback: () => this._selectionToLiteral("escape"),
       });
     } catch (e) {
       console.warn("[转义] 顶栏按钮注册失败（移动端可能不支持）:", e.message);
@@ -366,22 +418,18 @@ export default class LiteralTextPlugin extends Plugin {
     if (mode === "code") {
       this._insertTextAtFocus("`" + text.replace(/`/g, "\\`") + "`", p, restored);
     } else {
-      /**
-       * 转义模式的字符安全替换：
-       *   \  → \\   （反斜杠本身需要转义）
-       *   `  → \`   （反引号需要转义）
-       *   *  → \*   （反斜杠对斜体有效）
-       *   #  → `#`  （行内代码包裹！\# 和零宽空格都被 Lute 吃掉）
-       *   其他 MD 特殊字符 → 标准反斜杠转义
-       */
-      const escaped = text
-        .replace(/\\/g, "\\\\")                       // 反斜杠先转义
-        .replace(/`/g, "\\`")                         // 反引号
-        .replace(/([{}[\]()+.\-!~|><])/g, "\\$&")     // 其它 MD 特殊字符（不含 * #，避免二次转义）
-        .replace(/\*/g, SAFE_ASTERISK)                // ★ 最后处理 * 和 #，确保不被上面正则破坏
-        .replace(/#/g, SAFE_HASH);
-      this._insertTextAtFocus(escaped, p, restored);
+      this._insertTextAtFocus(this._escapeText(text), p, restored);
     }
+  }
+
+  /** 转义模式字符安全替换（与字面文本输入共用） */
+  _escapeText(text) {
+    return text
+      .replace(/\\/g, "\\\\")                       // 反斜杠先转义
+      .replace(/`/g, "\\`")                         // 反引号
+      .replace(/([{}[\]()+.\-!~|><])/g, "\\$&")     // 其它 MD 特殊字符（不含 * #，避免二次转义）
+      .replace(/\*/g, SAFE_ASTERISK)                // ★ 最后处理 * 和 #，确保不被上面正则破坏
+      .replace(/#/g, SAFE_HASH);
   }
 
   /* ==========================================================
@@ -421,6 +469,65 @@ export default class LiteralTextPlugin extends Plugin {
     const blockId = this._getCurrentBlockId();
     if (blockId) { this._insertBlockAfter(blockId, text).catch(() => {}); return; }
     showMessage("插入失败", 3000, "error");
+  }
+
+  /* ==========================================================
+     选区转字面量 / 字符全半角转换（L1 / L2）
+     ========================================================== */
+  /** 用 text 替换当前选区（execCommand 会替换已选内容）；无选区时退化为焦点插入 */
+  _replaceSelection(text) {
+    const sel = window.getSelection();
+    const p = this._getActiveProtyle();
+    try {
+      const wysiwyg = p?.element?.querySelector(".protyle-wysiwyg");
+      if (wysiwyg) wysiwyg.focus({ preventScroll: true });
+    } catch (e) {}
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+      if (document.execCommand("insertText", false, text)) return true;
+    }
+    // 选区为空或替换失败 → 退化为焦点插入
+    this._insertTextAtFocus(text, p);
+    return false;
+  }
+
+  /** L1：将当前选区转为字面量（code=行内代码，escape=纯文本转义） */
+  _selectionToLiteral(mode) {
+    const sel = window.getSelection();
+    const text = sel ? sel.toString() : "";
+    if (!text || !text.trim()) {
+      showMessage("请先选中要转换的文本", 2500, "warning");
+      return;
+    }
+    const literal = mode === "code"
+      ? "`" + text.replace(/`/g, "\\`") + "`"
+      : this._escapeText(text);
+    this._replaceSelection(literal);
+    showMessage(mode === "code" ? "已转为行内代码 ✅" : "已转义为纯文本 ✅", 2000, "info");
+  }
+
+  /** L2：全角 ⇄ 半角 字符转换（target: toHalf / toFull） */
+  _convertWidth(target) {
+    const sel = window.getSelection();
+    const text = sel ? sel.toString() : "";
+    if (!text || !text.trim()) {
+      showMessage("请先选中要转换的文本", 2500, "warning");
+      return;
+    }
+    let out = "";
+    for (const ch of text) {
+      const code = ch.codePointAt(0);
+      if (target === "toHalf") {
+        if (code === 0x3000) out += " ";
+        else if (code >= 0xff01 && code <= 0xff5e) out += String.fromCodePoint(code - 0xfee0);
+        else out += ch;
+      } else { // toFull
+        if (code === 0x20) out += "　";
+        else if (code >= 0x21 && code <= 0x7e) out += String.fromCodePoint(code + 0xfee0);
+        else out += ch;
+      }
+    }
+    this._replaceSelection(out);
+    showMessage(target === "toHalf" ? "全角已转半角 ✅" : "半角已转全角 ✅", 2000, "info");
   }
 
   /* ==========================================================

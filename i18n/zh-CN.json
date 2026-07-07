@@ -1,5 +1,9 @@
 {
   "quickLiteralInput": "字面文本快速输入",
   "toggleAutoEscape": "切换自动转义模式",
-  "richPaste": "富文本粘贴（自动下载图片）"
+  "richPaste": "富文本粘贴（自动下载图片）",
+  "selectionToLiteral": "选区转字面量（行内代码）",
+  "selectionToEscape": "选区转转义（纯文本）",
+  "convertToHalf": "全角转半角",
+  "convertToFull": "半角转全角"
 }

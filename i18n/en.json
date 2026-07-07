@@ -1,5 +1,9 @@
 {
   "quickLiteralInput": "Quick Literal Input",
   "toggleAutoEscape": "Toggle Auto Escape",
-  "richPaste": "Rich Paste (auto download images)"
+  "richPaste": "Rich Paste (auto download images)",
+  "selectionToLiteral": "Selection to Literal (inline code)",
+  "selectionToEscape": "Selection to Escaped (plain text)",
+  "convertToHalf": "Full-width to Half-width",
+  "convertToFull": "Half-width to Full-width"
 }
