@@ -6,7 +6,7 @@
  *   Ctrl+Shift+E  切换自动转义模式
  *   /字面  /literal  斜杠命令
  *
- * 功能二：自动转义（★ 核心）
+ * 功能二：自动转义（核心）
  *   开启后：按 * 自动插入 \*  （不被渲染为斜体/粗体）
  *          按 # 自动插入 `#` （不被渲染为标签/标题）
  *   Ctrl+Shift+E 切换 | 顶部栏图标点击切换
@@ -22,9 +22,7 @@
 
 import { Plugin, Dialog, showMessage, getFrontend, getActiveEditor, getAllEditor } from "siyuan";
 
-/* ============================================================
-   常量
-   ============================================================ */
+// 常量
 const STORAGE_KEY = "escape-config";
 const API_COPY = "/api/extension/copy";
 const API_INSERT = "/api/block/insertBlock";
@@ -32,17 +30,13 @@ const API_INSERT = "/api/block/insertBlock";
 /**
  * 安全字符映射（# 行内代码包裹是唯一可靠方案）
  *
- * 经过实测验证：
- *   \*    → Lute 正确保留，不渲染为斜体 ✅
- *   `#`   → 行内代码包裹，Lute 不解析内容 ✅（\# 和 \u200B# 均失败 ❌）
+ * 经过实测验证：反斜杠转义 \* 可被 Lute 正确保留（不渲染为斜体）；
+ * 行内代码包裹 `#` 时 Lute 不解析内部内容，而 \# 与 \u200B# 两种方案均失败。
  */
 const SAFE_ASTERISK = "\\*";       // 反斜杠转义 * — 对斜体有效
 const SAFE_HASH = "`#`";           // 反引号行内代码包裹 # — 对标签/标题有效
 
-/* ============================================================
-   图标定义（SVG Symbol 格式，通过 addIcons 注册）
-   思源 addTopBar 的 icon 参数接受 Symbol ID 字符串，不是原始 SVG！
-   ============================================================ */
+// 图标定义（SVG Symbol 格式，通过 addIcons 注册） 思源 addTopBar 的 icon 参数接受 Symbol ID 字符串，不是原始 SVG！
 
 /** 图标注册：一次性注册所有 Symbol 定义（ID 必须以 icon 开头，匹配官方规范） */
 const ICON_SYMBOLS = `
@@ -65,17 +59,13 @@ const ICON_PASTE_ID    = "iconPaste";
 const ICON_ESCAPE_ON_ID  = "iconShieldOn";
 const ICON_ESCAPE_OFF_ID = "iconShieldOff";
 
-/* ============================================================
-   辅助函数
-   ============================================================ */
+// 辅助函数
 const _isMobile = () => {
   const f = getFrontend();
   return f === "mobile" || f === "browser-mobile";
 };
 
-/* ============================================================
-   插件主类
-   ============================================================ */
+// 插件主类
 interface LiteralTextConfig {
   autoEscape?: boolean;
   richPaste?: boolean;
@@ -109,7 +99,7 @@ export default class LiteralTextPlugin extends Plugin {
     }) || {};
     console.log("[转义] 已加载配置:", JSON.stringify(this.config));
 
-    // ★ 默认开启自动转义（用户首次安装即生效）
+    // 默认开启自动转义（用户首次安装即生效）
     this.autoEscapeMode = this.config.autoEscape ?? true;
     this.richPasteEnabled = this.config.richPaste ?? true;
     // 自动转义字符集（默认 * 和 #，与历史行为一致）
@@ -255,7 +245,7 @@ export default class LiteralTextPlugin extends Plugin {
       this._enableAutoEscape();
     }
 
-    showMessage("转义 v2.7.0 已加载 ✅", 2500, "info");
+    showMessage("转义 v2.7.0 已加载 ", 2500, "info");
     console.log("[转义] 加载完成，前端：" + getFrontend() + "，自动转义：" + (this.autoEscapeMode ? "开启" : "关闭"));
   }
 
@@ -278,7 +268,7 @@ export default class LiteralTextPlugin extends Plugin {
         callback: () => this._triggerRichPaste(),
       });
 
-      // ★ 按钮3：自动转义开关
+      // 按钮3：自动转义开关
       const escIcon = this.autoEscapeMode ? ICON_ESCAPE_ON_ID : ICON_ESCAPE_OFF_ID;
       const escTitle = this.autoEscapeMode
         ? "自动转义：已开启（点击或 Ctrl+Shift+E 关闭）"
@@ -290,7 +280,7 @@ export default class LiteralTextPlugin extends Plugin {
         callback: () => this._toggleAutoEscape(),
       });
 
-      // ★ 按钮4：选区转转义（L1，纯文本字面量；行内代码可由 Ctrl+Shift+L / 第一个按钮完成）
+      // 按钮4：选区转转义（L1，纯文本字面量；行内代码可由 Ctrl+Shift+L / 第一个按钮完成）
       this.addTopBar({
         icon: ICON_CODE_ID,
         title: "选区转转义（选中文本→纯文本字面量）",
@@ -354,9 +344,7 @@ export default class LiteralTextPlugin extends Plugin {
     return null;
   }
 
-  /* ==========================================================
-     光标保存与恢复
-     ========================================================== */
+// 光标保存与恢复
   _saveCursorPosition(protyle) {
     const p = protyle || this._getActiveProtyle();
     if (!p) return;
@@ -389,9 +377,7 @@ export default class LiteralTextPlugin extends Plugin {
 
   _clearSavedPosition() { this._savedRange = null; this._savedBlockId = null; }
 
-  /* ==========================================================
-     一、字面文本输入
-     ========================================================== */
+// 一、字面文本输入
   _handleQuickInput(protyle?) {
     const p = protyle || this._getActiveProtyle();
     if (!p) { showMessage("请先打开文档", 3000, "warning" as any); return; }
@@ -479,7 +465,7 @@ export default class LiteralTextPlugin extends Plugin {
       .replace(/\\/g, "\\\\")                       // 反斜杠先转义
       .replace(/`/g, "\\`")                         // 反引号
       .replace(/([{}[\]()+.\-!~|><])/g, "\\$&")     // 其它 MD 特殊字符（不含 * #，避免二次转义）
-      .replace(/\*/g, SAFE_ASTERISK)                // ★ 最后处理 * 和 #，确保不被上面正则破坏
+      .replace(/\*/g, SAFE_ASTERISK)                // 最后处理 * 和 #，确保不被上面正则破坏
       .replace(/#/g, SAFE_HASH);
   }
 
@@ -490,9 +476,7 @@ export default class LiteralTextPlugin extends Plugin {
     return "\\" + ch;
   }
 
-  /* ==========================================================
-     文本插入
-     ========================================================== */
+// 文本插入
   _insertTextAtFocus(text, protyle, cursorRestored = false) {
     const p = protyle || this._getActiveProtyle();
     if (!p) { showMessage("请先打开文档", 3000, "warning" as any); return; }
@@ -529,9 +513,7 @@ export default class LiteralTextPlugin extends Plugin {
     showMessage("插入失败", 3000, "error");
   }
 
-  /* ==========================================================
-     选区转字面量 / 字符全半角转换（L1 / L2）
-     ========================================================== */
+// 选区转字面量 / 字符全半角转换（L1 / L2）
   /** 用 text 替换当前选区（execCommand 会替换已选内容）；无选区时退化为焦点插入 */
   _replaceSelection(text) {
     const sel = window.getSelection();
@@ -560,7 +542,7 @@ export default class LiteralTextPlugin extends Plugin {
       ? "`" + text.replace(/`/g, "\\`") + "`"
       : this._escapeText(text);
     this._replaceSelection(literal);
-    showMessage(mode === "code" ? "已转为行内代码 ✅" : "已转义为纯文本 ✅", 2000, "info");
+    showMessage(mode === "code" ? "已转为行内代码 " : "已转义为纯文本 ", 2000, "info");
   }
 
   /** L2：全角 ⇄ 半角 字符转换（target: toHalf / toFull） */
@@ -585,12 +567,10 @@ export default class LiteralTextPlugin extends Plugin {
       }
     }
     this._replaceSelection(out);
-    showMessage(target === "toHalf" ? "全角已转半角 ✅" : "半角已转全角 ✅", 2000, "info");
+    showMessage(target === "toHalf" ? "全角已转半角 " : "半角已转全角 ", 2000, "info");
   }
 
-  /* ==========================================================
-     二、自动转义
-     ========================================================== */
+// 二、自动转义
 
   _toggleAutoEscape() {
     this.autoEscapeMode = !this.autoEscapeMode;
@@ -599,7 +579,7 @@ export default class LiteralTextPlugin extends Plugin {
 
     if (this.autoEscapeMode) {
       this._enableAutoEscape();
-      showMessage("✅ 自动转义已开启：*→\\*  #→\`#\`", 2500, "info");
+      showMessage("自动转义已开启：*→\\*  #→\`#\`", 2500, "info");
     } else {
       this._disableAutoEscape();
       showMessage("自动转义已关闭", 2000, "info");
@@ -610,18 +590,16 @@ export default class LiteralTextPlugin extends Plugin {
     if (this._escapeHandler) return;
 
     /**
-     * # 字符自动转义（经过 3 次迭代验证）：
-     *
-     * 迭代1: \#         → 被 Lute 块级扫描器吃掉，仍渲染为标签 ❌
-     * 迭代2: \u200B#     → 零宽空格被 Lute 忽略，继续解析 # ❌
-     * 迭代3: `#` (行内代码) → Lute 不解析行内代码内部内容 ✅
+     * # 字符自动转义：
+     * 经多次验证，\# 会被 Lute 块级扫描器吃掉仍渲染为标签，\u200B# 的零宽空格被 Lute 忽略继续解析 #，
+     * 最终采用 `#` 行内代码包裹方案，Lute 不解析行内代码内部内容。
      */
     this._escapeHandler = (e) => {
       // 输入法合成中（中文/日文等）不拦截，避免干扰正常输入
       if (e.isComposing || e.key === "Process") return;
       if (!this.autoEscapeMode) return;
       if (!e.target.closest?.(".protyle-wysiwyg")) return;
-      // ★ 代码块 / 行内代码内不打断：里面本就是字面量，再加转义是画蛇添足
+      // 代码块 / 行内代码内不打断：里面本就是字面量，再加转义是画蛇添足
       if (e.target.closest?.(".code-block, [data-type='code-block'], code")) return;
       if (!this.escapeChars.includes(e.key)) return;
 
@@ -644,9 +622,7 @@ export default class LiteralTextPlugin extends Plugin {
     }
   }
 
-  /* ==========================================================
-     三、富文本粘贴
-     ========================================================== */
+// 三、富文本粘贴
   _initPaste() {
     this.pasteHandler = async (event) => {
       if (!this.richPasteEnabled) return;
@@ -665,7 +641,7 @@ export default class LiteralTextPlugin extends Plugin {
         this._removeToast(toastId);
         if (md?.trim()) {
           detail.resolve({ textPlain: md });
-          showMessage("粘贴完成 ✅", 2000, "info");
+          showMessage("粘贴完成 ", 2000, "info");
         } else {
           detail.resolve({ textPlain: textPlain });
         }
@@ -697,7 +673,7 @@ export default class LiteralTextPlugin extends Plugin {
               this._restoreCursorPosition();
               this._clearSavedPosition();
               this._insertTextAtFocus(md, p, true);
-              showMessage("粘贴完成 ✅", 2000, "info");
+              showMessage("粘贴完成 ", 2000, "info");
             } else { this._clearSavedPosition(); }
           } catch (err: any) {
             this._removeToast(tid);
@@ -745,9 +721,7 @@ export default class LiteralTextPlugin extends Plugin {
     }).then(r => r.json()).then(resp => resp.code === 0 ? undefined : Promise.reject(resp.msg));
   }
 
-  /* ==========================================================
-     三·五、富粘贴图片子目录迁移
-     ========================================================== */
+// 三·五、富粘贴图片子目录迁移
 
   /** HTML → Markdown（含图片本地化），并依据设置把图片迁到 assets/<subdir>/ */
   async _pasteHtmlToMarkdown(html, protyle) {
@@ -796,9 +770,7 @@ export default class LiteralTextPlugin extends Plugin {
     return out;
   }
 
-  /* ==========================================================
-     三·六、字面文本块（多行）
-     ========================================================== */
+// 三·六、字面文本块（多行）
   _showLiteralBlockDialog(protyle?) {
     const mobile = _isMobile();
     const p = protyle || this._getActiveProtyle();
@@ -858,7 +830,7 @@ export default class LiteralTextPlugin extends Plugin {
       } else {
         throw new Error("no insert target");
       }
-      showMessage("已插入字面文本块 ✅", 2000, "info");
+      showMessage("已插入字面文本块 ", 2000, "info");
     } catch (err: any) {
       console.error("[转义] 插入代码块失败:", err);
       showMessage("插入失败，已退回焦点插入", 3000, "error");
@@ -866,9 +838,7 @@ export default class LiteralTextPlugin extends Plugin {
     }
   }
 
-  /* ==========================================================
-     三·七、反字面（还原为普通文本）
-     ========================================================== */
+// 三·七、反字面（还原为普通文本）
   _unescapeSelection() {
     const sel = window.getSelection();
     const text = sel ? sel.toString() : "";
@@ -879,12 +849,10 @@ export default class LiteralTextPlugin extends Plugin {
     // 去掉紧接在特殊字符前的转义反斜杠；选区替换会同时清除行内代码格式（unwrap）
     const unescaped = text.replace(/\\([*#_~`+\-!|><[\](){}])/g, "$1");
     this._replaceSelection(unescaped);
-    showMessage("已还原为普通文本 ✅", 2000, "info");
+    showMessage("已还原为普通文本 ", 2000, "info");
   }
 
-  /* ==========================================================
-     四、设置面板
-     ========================================================== */
+// 四、设置面板
   _showSettingsDialog() {
     const mobile = _isMobile();
     const escapeCandidates = ["*", "#", "_", "~", ">", "[", "]", "|", "+", "!"];
@@ -962,9 +930,7 @@ export default class LiteralTextPlugin extends Plugin {
     $("#cfg-cancel").addEventListener("click", () => dialog.destroy());
   }
 
-  /* ==========================================================
-     工具方法
-     ========================================================== */
+// 工具方法
   _getCurrentBlockId(protyle?) {
     try {
       const sel = window.getSelection();

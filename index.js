@@ -185,7 +185,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     if (this.autoEscapeMode) {
       this._enableAutoEscape();
     }
-    (0, import_siyuan.showMessage)("\u8F6C\u4E49 v2.7.0 \u5DF2\u52A0\u8F7D \u2705", 2500, "info");
+    (0, import_siyuan.showMessage)("\u8F6C\u4E49 v2.7.0 \u5DF2\u52A0\u8F7D ", 2500, "info");
     console.log("[\u8F6C\u4E49] \u52A0\u8F7D\u5B8C\u6210\uFF0C\u524D\u7AEF\uFF1A" + (0, import_siyuan.getFrontend)() + "\uFF0C\u81EA\u52A8\u8F6C\u4E49\uFF1A" + (this.autoEscapeMode ? "\u5F00\u542F" : "\u5173\u95ED"));
   }
   onLayoutReady() {
@@ -273,9 +273,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     return null;
   }
-  /* ==========================================================
-     光标保存与恢复
-     ========================================================== */
+  // 光标保存与恢复
   _saveCursorPosition(protyle) {
     const p = protyle || this._getActiveProtyle();
     if (!p) return;
@@ -323,9 +321,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     this._savedRange = null;
     this._savedBlockId = null;
   }
-  /* ==========================================================
-     一、字面文本输入
-     ========================================================== */
+  // 一、字面文本输入
   _handleQuickInput(protyle) {
     const p = protyle || this._getActiveProtyle();
     if (!p) {
@@ -429,9 +425,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     if (ch === "#") return SAFE_HASH;
     return "\\" + ch;
   }
-  /* ==========================================================
-     文本插入
-     ========================================================== */
+  // 文本插入
   _insertTextAtFocus(text, protyle, cursorRestored = false) {
     const p = protyle || this._getActiveProtyle();
     if (!p) {
@@ -486,9 +480,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     (0, import_siyuan.showMessage)("\u63D2\u5165\u5931\u8D25", 3e3, "error");
   }
-  /* ==========================================================
-     选区转字面量 / 字符全半角转换（L1 / L2）
-     ========================================================== */
+  // 选区转字面量 / 字符全半角转换（L1 / L2）
   /** 用 text 替换当前选区（execCommand 会替换已选内容）；无选区时退化为焦点插入 */
   _replaceSelection(text) {
     const sel = window.getSelection();
@@ -514,7 +506,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     const literal = mode === "code" ? "`" + text.replace(/`/g, "\\`") + "`" : this._escapeText(text);
     this._replaceSelection(literal);
-    (0, import_siyuan.showMessage)(mode === "code" ? "\u5DF2\u8F6C\u4E3A\u884C\u5185\u4EE3\u7801 \u2705" : "\u5DF2\u8F6C\u4E49\u4E3A\u7EAF\u6587\u672C \u2705", 2e3, "info");
+    (0, import_siyuan.showMessage)(mode === "code" ? "\u5DF2\u8F6C\u4E3A\u884C\u5185\u4EE3\u7801 " : "\u5DF2\u8F6C\u4E49\u4E3A\u7EAF\u6587\u672C ", 2e3, "info");
   }
   /** L2：全角 ⇄ 半角 字符转换（target: toHalf / toFull） */
   _convertWidth(target) {
@@ -538,18 +530,16 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       }
     }
     this._replaceSelection(out);
-    (0, import_siyuan.showMessage)(target === "toHalf" ? "\u5168\u89D2\u5DF2\u8F6C\u534A\u89D2 \u2705" : "\u534A\u89D2\u5DF2\u8F6C\u5168\u89D2 \u2705", 2e3, "info");
+    (0, import_siyuan.showMessage)(target === "toHalf" ? "\u5168\u89D2\u5DF2\u8F6C\u534A\u89D2 " : "\u534A\u89D2\u5DF2\u8F6C\u5168\u89D2 ", 2e3, "info");
   }
-  /* ==========================================================
-     二、自动转义
-     ========================================================== */
+  // 二、自动转义
   _toggleAutoEscape() {
     this.autoEscapeMode = !this.autoEscapeMode;
     this._saveConfig();
     this._updateEscapeButton();
     if (this.autoEscapeMode) {
       this._enableAutoEscape();
-      (0, import_siyuan.showMessage)("\u2705 \u81EA\u52A8\u8F6C\u4E49\u5DF2\u5F00\u542F\uFF1A*\u2192\\*  #\u2192`#`", 2500, "info");
+      (0, import_siyuan.showMessage)("\u81EA\u52A8\u8F6C\u4E49\u5DF2\u5F00\u542F\uFF1A*\u2192\\*  #\u2192`#`", 2500, "info");
     } else {
       this._disableAutoEscape();
       (0, import_siyuan.showMessage)("\u81EA\u52A8\u8F6C\u4E49\u5DF2\u5173\u95ED", 2e3, "info");
@@ -579,9 +569,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       this._escapeHandler = null;
     }
   }
-  /* ==========================================================
-     三、富文本粘贴
-     ========================================================== */
+  // 三、富文本粘贴
   _initPaste() {
     this.pasteHandler = async (event) => {
       if (!this.richPasteEnabled) return;
@@ -599,7 +587,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
         this._removeToast(toastId);
         if (md?.trim()) {
           detail.resolve({ textPlain: md });
-          (0, import_siyuan.showMessage)("\u7C98\u8D34\u5B8C\u6210 \u2705", 2e3, "info");
+          (0, import_siyuan.showMessage)("\u7C98\u8D34\u5B8C\u6210 ", 2e3, "info");
         } else {
           detail.resolve({ textPlain });
         }
@@ -631,7 +619,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
               this._restoreCursorPosition();
               this._clearSavedPosition();
               this._insertTextAtFocus(md, p, true);
-              (0, import_siyuan.showMessage)("\u7C98\u8D34\u5B8C\u6210 \u2705", 2e3, "info");
+              (0, import_siyuan.showMessage)("\u7C98\u8D34\u5B8C\u6210 ", 2e3, "info");
             } else {
               this._clearSavedPosition();
             }
@@ -678,9 +666,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       body: JSON.stringify({ data: md, dataType: "markdown", previousID: prevId })
     }).then((r) => r.json()).then((resp) => resp.code === 0 ? void 0 : Promise.reject(resp.msg));
   }
-  /* ==========================================================
-     三·五、富粘贴图片子目录迁移
-     ========================================================== */
+  // 三·五、富粘贴图片子目录迁移
   /** HTML → Markdown（含图片本地化），并依据设置把图片迁到 assets/<subdir>/ */
   async _pasteHtmlToMarkdown(html, protyle) {
     const md = await this._htmlToMarkdown(html, protyle);
@@ -726,9 +712,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     return out;
   }
-  /* ==========================================================
-     三·六、字面文本块（多行）
-     ========================================================== */
+  // 三·六、字面文本块（多行）
   _showLiteralBlockDialog(protyle) {
     const mobile = _isMobile();
     const p = protyle || this._getActiveProtyle();
@@ -799,16 +783,14 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       } else {
         throw new Error("no insert target");
       }
-      (0, import_siyuan.showMessage)("\u5DF2\u63D2\u5165\u5B57\u9762\u6587\u672C\u5757 \u2705", 2e3, "info");
+      (0, import_siyuan.showMessage)("\u5DF2\u63D2\u5165\u5B57\u9762\u6587\u672C\u5757 ", 2e3, "info");
     } catch (err) {
       console.error("[\u8F6C\u4E49] \u63D2\u5165\u4EE3\u7801\u5757\u5931\u8D25:", err);
       (0, import_siyuan.showMessage)("\u63D2\u5165\u5931\u8D25\uFF0C\u5DF2\u9000\u56DE\u7126\u70B9\u63D2\u5165", 3e3, "error");
       this._insertTextAtFocus(md, p);
     }
   }
-  /* ==========================================================
-     三·七、反字面（还原为普通文本）
-     ========================================================== */
+  // 三·七、反字面（还原为普通文本）
   _unescapeSelection() {
     const sel = window.getSelection();
     const text = sel ? sel.toString() : "";
@@ -818,11 +800,9 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     const unescaped = text.replace(/\\([*#_~`+\-!|><[\](){}])/g, "$1");
     this._replaceSelection(unescaped);
-    (0, import_siyuan.showMessage)("\u5DF2\u8FD8\u539F\u4E3A\u666E\u901A\u6587\u672C \u2705", 2e3, "info");
+    (0, import_siyuan.showMessage)("\u5DF2\u8FD8\u539F\u4E3A\u666E\u901A\u6587\u672C ", 2e3, "info");
   }
-  /* ==========================================================
-     四、设置面板
-     ========================================================== */
+  // 四、设置面板
   _showSettingsDialog() {
     const mobile = _isMobile();
     const escapeCandidates = ["*", "#", "_", "~", ">", "[", "]", "|", "+", "!"];
@@ -894,9 +874,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     });
     $("#cfg-cancel").addEventListener("click", () => dialog.destroy());
   }
-  /* ==========================================================
-     工具方法
-     ========================================================== */
+  // 工具方法
   _getCurrentBlockId(protyle) {
     try {
       const sel = window.getSelection();
