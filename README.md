@@ -178,6 +178,6 @@ esbuild-build.js    # 构建脚本
 
 ---
 
-## License
+## 开源协议
 
-MIT
+本项目基于 [MIT License](./LICENSE) 开源。Copyright © 2026 zfb517。
