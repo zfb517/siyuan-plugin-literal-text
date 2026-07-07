@@ -1,6 +1,5 @@
 {
   "quickLiteralInput": "字面文本快速输入",
   "toggleAutoEscape": "切换自动转义模式",
-  "richPaste": "富文本粘贴（自动下载图片）",
-  "settings": "插件设置"
+  "richPaste": "富文本粘贴（自动下载图片）"
 }

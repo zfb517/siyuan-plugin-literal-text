@@ -375,12 +375,11 @@ export default class LiteralTextPlugin extends Plugin {
        *   其他 MD 特殊字符 → 标准反斜杠转义
        */
       const escaped = text
-        .replace(/\\/g, "\\\\")
-        .replace(/`/g, "\\`")
-        .replace(/\*/g, SAFE_ASTERISK)
-        .replace(/#/g, SAFE_HASH)
-        .replace(/([{}\[\]()#+\-.!~|><])/g, "\\$&")
-        .replace(/`#`/g, SAFE_HASH);  // 确保上面正则没把 SAFE_HASH 再次转义
+        .replace(/\\/g, "\\\\")                       // 反斜杠先转义
+        .replace(/`/g, "\\`")                         // 反引号
+        .replace(/([{}[\]()+.\-!~|><])/g, "\\$&")     // 其它 MD 特殊字符（不含 * #，避免二次转义）
+        .replace(/\*/g, SAFE_ASTERISK)                // ★ 最后处理 * 和 #，确保不被上面正则破坏
+        .replace(/#/g, SAFE_HASH);
       this._insertTextAtFocus(escaped, p, restored);
     }
   }
@@ -453,6 +452,8 @@ export default class LiteralTextPlugin extends Plugin {
      * 迭代3: `#` (行内代码) → Lute 不解析行内代码内部内容 ✅
      */
     this._escapeHandler = (e) => {
+      // 输入法合成中（中文/日文等）不拦截，避免干扰正常输入
+      if (e.isComposing || e.key === "Process") return;
       if (!this.autoEscapeMode) return;
       if (!e.target.closest?.(".protyle-wysiwyg")) return;
       if (!["*", "#"].includes(e.key)) return;

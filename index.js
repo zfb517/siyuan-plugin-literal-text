@@ -339,7 +339,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     if (mode === "code") {
       this._insertTextAtFocus("`" + text.replace(/`/g, "\\`") + "`", p, restored);
     } else {
-      const escaped = text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\*/g, SAFE_ASTERISK).replace(/#/g, SAFE_HASH).replace(/([{}\[\]()#+\-.!~|><])/g, "\\$&").replace(/`#`/g, SAFE_HASH);
+      const escaped = text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/([{}[\]()+.\-!~|><])/g, "\\$&").replace(/\*/g, SAFE_ASTERISK).replace(/#/g, SAFE_HASH);
       this._insertTextAtFocus(escaped, p, restored);
     }
   }
@@ -418,6 +418,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
   _enableAutoEscape() {
     if (this._escapeHandler) return;
     this._escapeHandler = (e) => {
+      if (e.isComposing || e.key === "Process") return;
       if (!this.autoEscapeMode) return;
       if (!e.target.closest?.(".protyle-wysiwyg")) return;
       if (!["*", "#"].includes(e.key)) return;
