@@ -139,12 +139,6 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
         callback: (protyle) => this._triggerRichPaste(protyle)
       },
       {
-        filter: ["\u8BBE\u7F6E", "setting"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u63D2\u4EF6\u8BBE\u7F6E</span></div>',
-        id: "settings",
-        callback: () => this._showSettingsDialog()
-      },
-      {
         filter: ["\u9009\u533A\u8F6C\u5B57\u9762", "selection literal", "xqzmb"],
         html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u9009\u533A\u8F6C\u5B57\u9762\u91CF</span><span class="b3-list-item__meta">\u9009\u4E2D\u6587\u672C\u2192\u884C\u5185\u4EE3\u7801</span></div>',
         id: "selection-literal",
@@ -181,6 +175,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
         callback: () => this._convertWidth("toFull")
       }
     ];
+    this._buildSettingPanel();
     this._initPaste();
     if (this.autoEscapeMode) {
       this._enableAutoEscape();
@@ -802,77 +797,94 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     this._replaceSelection(unescaped);
     (0, import_siyuan.showMessage)("\u5DF2\u8FD8\u539F\u4E3A\u666E\u901A\u6587\u672C ", 2e3, "info");
   }
-  // 四、设置面板
-  _showSettingsDialog() {
+  // 四、设置面板（标准位置：设置 -> 集市 -> 已下载 -> 插件齿轮）
+  _buildSettingPanel() {
     const mobile = _isMobile();
-    const escapeCandidates = ["*", "#", "_", "~", ">", "[", "]", "|", "+", "!"];
-    const charHints = { "*": "&#92;*", "#": "&#96;#&#96;", "_": "&#92;_", "~": "&#92;~", ">": "&#92;>", "[": "&#92;[", "]": "&#92;]", "|": "&#92;|", "+": "&#92;+", "!": "&#92;!" };
-    const charChecks = escapeCandidates.map((c) => {
-      const checked = this.escapeChars.includes(c) ? "checked" : "";
-      return '<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin:0 10px 6px 0;"><input type="checkbox" name="cfg-escape-char" value="' + c + '" ' + checked + "/><span><code>" + c + "</code> \u2192 <code>" + charHints[c] + "</code></span></label>";
-    }).join("");
-    const dialog = new import_siyuan.Dialog({
-      title: "\u8F6C\u4E49 \xB7 \u8BBE\u7F6E",
-      width: mobile ? "92%" : "480px",
-      content: `
-        <div style="padding:20px 24px 0;font-size:13px;line-height:2;">
-          <div class="lt-settings-section">\u81EA\u52A8\u8F6C\u4E49</div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px;">
-            <input type="checkbox" id="cfg-auto-escape" ${this.autoEscapeMode ? "checked" : ""}/>
-            <span>\u5F00\u542F\u81EA\u52A8\u8F6C\u4E49\uFF08* \u2192 \\* \uFF0C# \u2192 \u884C\u5185\u4EE3\u7801\uFF09</span>
-          </label>
-          <div style="margin:4px 0;color:var(--b3-empty-color);">\u81EA\u52A8\u8F6C\u4E49\u7684\u5B57\u7B26\uFF08\u9ED8\u8BA4 * \u548C #\uFF09\uFF1A</div>
-          <div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">${charChecks}</div>
-          <div style="font-size:12px;color:var(--b3-empty-color);margin-bottom:4px;">
-            # \u7528\u884C\u5185\u4EE3\u7801\u5305\u88F9\uFF08\u6D45\u7070\u80CC\u666F\uFF09\uFF0C\u5176\u5B83\u7528\u53CD\u659C\u6760\u524D\u7F00\uFF1B\u4EE3\u7801\u5757\u5185\u8F93\u5165\u7684\u5B57\u7B26\u4E0D\u53D7\u5F71\u54CD
-          </div>
-
-          <div class="lt-settings-divider"></div>
-
-          <div class="lt-settings-section">\u5BCC\u6587\u672C\u7C98\u8D34</div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
-            <input type="checkbox" id="cfg-rich-paste" ${this.richPasteEnabled ? "checked" : ""}/>
-            <span>\u81EA\u52A8\u62E6\u622A\u7C98\u8D34\uFF0C\u8C03\u7528\u5185\u6838 API \u672C\u5730\u5316\u56FE\u7247</span>
-          </label>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-            <span>\u56FE\u7247\u4FDD\u5B58\u5B50\u76EE\u5F55\uFF1A</span>
-            <input type="text" id="cfg-asset-subdir" class="b3-text-field fn__size200" value="${this.assetSubdir}" placeholder="\u7559\u7A7A=\u9ED8\u8BA4 assets/"/>
-          </div>
-          <div style="font-size:12px;color:var(--b3-empty-color);margin-bottom:4px;">
-            \u5982\u586B <code>wechat</code>\uFF0C\u56FE\u7247\u5B58\u5230 <code>assets/wechat/</code>\uFF08\u4EC5\u5B57\u6BCD\u6570\u5B57\u4E0B\u5212\u7EBF\u8FDE\u5B57\u7B26\uFF09
-          </div>
-
-          <div class="lt-settings-warn">
-            <b>\u8BF4\u660E</b><br/>
-            \u2022 <b>*</b> \u7528\u53CD\u659C\u6760 <code>\\*</code> \u4FDD\u62A4<br/>
-            \u2022 <b>#</b> \u7528\u884C\u5185\u4EE3\u7801 <code>\`#\`</code> \u4FDD\u62A4\uFF08<code>\\#</code> \u548C\u96F6\u5BBD\u7A7A\u683C\u5747\u88AB\u601D\u6E90\u5F15\u64CE\u5FFD\u7565\uFF09<br/>
-            \u2022 \u9876\u90E8\u680F\u7B2C\u4E09\u4E2A\u6309\u94AE\u53EF\u4E00\u952E\u5207\u6362\u81EA\u52A8\u8F6C\u4E49<br/>
-            \u2022 \u5BCC\u7C98\u8D34\u4F7F\u7528\u5185\u6838 <code>/api/extension/copy</code>
-          </div>
-        </div>
-        <div class="b3-dialog__action" style="padding:12px 24px 16px;">
-          <button class="b3-button" id="cfg-cancel" style="margin-right:8px;">\u53D6\u6D88</button>
-          <button class="b3-button b3-button--primary" id="cfg-ok">\u4FDD\u5B58</button>
-        </div>`
-    });
-    const $ = (s) => dialog.element.querySelector(s);
-    $("#cfg-ok").addEventListener("click", async () => {
-      const newAE = $("#cfg-auto-escape").checked;
-      const newRP = $("#cfg-rich-paste").checked;
-      if (newAE !== this.autoEscapeMode) {
-        this.autoEscapeMode = newAE;
-        newAE ? this._enableAutoEscape() : this._disableAutoEscape();
-        this._updateEscapeButton();
+    this.setting = new import_siyuan.Setting({
+      width: mobile ? "92%" : "560px",
+      height: mobile ? "auto" : "auto",
+      confirmCallback: () => {
+        this._saveConfig();
+        (0, import_siyuan.showMessage)("\u5DF2\u4FDD\u5B58", 2e3, "info");
       }
-      this.richPasteEnabled = newRP;
-      const newChars = [...dialog.element.querySelectorAll('input[name="cfg-escape-char"]:checked')].map((cb) => cb.value);
-      this.escapeChars = newChars.length ? newChars : ["*", "#"];
-      this.assetSubdir = ($("#cfg-asset-subdir").value || "").trim();
-      await this._saveConfig();
-      dialog.destroy();
-      (0, import_siyuan.showMessage)("\u5DF2\u4FDD\u5B58", 2e3, "info");
     });
-    $("#cfg-cancel").addEventListener("click", () => dialog.destroy());
+    this.setting.addItem({
+      title: "\u81EA\u52A8\u8F6C\u4E49",
+      description: "\u5F00\u542F\u540E\u8F93\u5165 * # _ \u7B49\u4F1A\u88AB\u81EA\u52A8\u4FDD\u62A4\uFF08* -> *\uFF0C# -> \u884C\u5185\u4EE3\u7801\uFF09\u3002\u4EE3\u7801\u5757\u5185\u4E0D\u53D7\u5F71\u54CD\u3002",
+      createActionElement: () => {
+        const el = document.createElement("input");
+        el.type = "checkbox";
+        el.id = "cfg-auto-escape";
+        el.checked = this.autoEscapeMode;
+        el.addEventListener("change", () => {
+          const v = el.checked;
+          if (v !== this.autoEscapeMode) {
+            this.autoEscapeMode = v;
+            v ? this._enableAutoEscape() : this._disableAutoEscape();
+            this._updateEscapeButton();
+          }
+        });
+        return el;
+      }
+    });
+    this.setting.addItem({
+      title: "\u81EA\u52A8\u8F6C\u4E49\u7684\u5B57\u7B26",
+      description: "\u9ED8\u8BA4 * \u548C #\u3002# \u7528\u884C\u5185\u4EE3\u7801\u5305\u88F9\uFF0C\u5176\u5B83\u7528\u53CD\u659C\u6760\u524D\u7F00\u3002",
+      createActionElement: () => {
+        const wrap = document.createElement("div");
+        wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 12px;";
+        const candidates = ["*", "#", "_", "~", ">", "[", "]", "|", "+", "!"];
+        candidates.forEach((c) => {
+          const label = document.createElement("label");
+          label.style.cssText = "display:inline-flex;align-items:center;gap:4px;cursor:pointer;";
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.value = c;
+          cb.className = "cfg-escape-char";
+          cb.checked = this.escapeChars.includes(c);
+          const span = document.createElement("span");
+          span.innerHTML = "<code>" + c + "</code>";
+          label.appendChild(cb);
+          label.appendChild(span);
+          wrap.appendChild(label);
+        });
+        wrap.addEventListener("change", () => {
+          const chars = Array.from(wrap.querySelectorAll("input.cfg-escape-char:checked")).map((cb) => cb.value);
+          this.escapeChars = chars.length ? chars : ["*", "#"];
+        });
+        return wrap;
+      }
+    });
+    this.setting.addItem({
+      title: "\u5BCC\u6587\u672C\u7C98\u8D34",
+      description: "\u81EA\u52A8\u62E6\u622A\u7C98\u8D34\uFF0C\u8C03\u7528\u5185\u6838 API \u672C\u5730\u5316\u56FE\u7247\uFF08/api/extension/copy\uFF09\u3002",
+      createActionElement: () => {
+        const el = document.createElement("input");
+        el.type = "checkbox";
+        el.id = "cfg-rich-paste";
+        el.checked = this.richPasteEnabled;
+        el.addEventListener("change", () => {
+          this.richPasteEnabled = el.checked;
+        });
+        return el;
+      }
+    });
+    this.setting.addItem({
+      title: "\u56FE\u7247\u4FDD\u5B58\u5B50\u76EE\u5F55",
+      description: "\u5982\u586B wechat\uFF0C\u56FE\u7247\u5B58\u5230 assets/wechat/\uFF08\u4EC5\u5B57\u6BCD\u6570\u5B57\u4E0B\u5212\u7EBF\u8FDE\u5B57\u7B26\uFF09\u3002\u7559\u7A7A=\u9ED8\u8BA4 assets/\u3002",
+      createActionElement: () => {
+        const el = document.createElement("input");
+        el.type = "text";
+        el.id = "cfg-asset-subdir";
+        el.className = "b3-text-field fn__size200";
+        el.value = this.assetSubdir;
+        el.placeholder = "\u7559\u7A7A=\u9ED8\u8BA4 assets/";
+        el.addEventListener("input", () => {
+          this.assetSubdir = el.value.trim();
+        });
+        return el;
+      }
+    });
   }
   // 工具方法
   _getCurrentBlockId(protyle) {

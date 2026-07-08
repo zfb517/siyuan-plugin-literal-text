@@ -20,7 +20,7 @@
  *   - _htmlToMarkdown 移除多余的 new Promise 包装
  */
 
-import { Plugin, Dialog, showMessage, getFrontend, getActiveEditor, getAllEditor } from "siyuan";
+import { Plugin, Dialog, showMessage, getFrontend, getActiveEditor, getAllEditor, Setting } from "siyuan";
 
 // 常量
 const STORAGE_KEY = "escape-config";
@@ -194,12 +194,6 @@ export default class LiteralTextPlugin extends Plugin {
         callback: (protyle) => this._triggerRichPaste(protyle),
       },
       {
-        filter: ["设置", "setting"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">插件设置</span></div>',
-        id: "settings",
-        callback: () => this._showSettingsDialog(),
-      },
-      {
         filter: ["选区转字面", "selection literal", "xqzmb"],
         html: '<div class="b3-list-item__first"><span class="b3-list-item__text">选区转字面量</span><span class="b3-list-item__meta">选中文本→行内代码</span></div>',
         id: "selection-literal",
@@ -236,6 +230,9 @@ export default class LiteralTextPlugin extends Plugin {
         callback: () => this._convertWidth("toFull"),
       },
     ];
+
+    /* --- 2.5 设置面板（标准位置：设置 → 集市 → 已下载 → 插件齿轮） --- */
+    this._buildSettingPanel();
 
     /* --- 3. 粘贴事件 --- */
     this._initPaste();
@@ -852,83 +849,97 @@ export default class LiteralTextPlugin extends Plugin {
     showMessage("已还原为普通文本 ", 2000, "info");
   }
 
-// 四、设置面板
-  _showSettingsDialog() {
+// 四、设置面板（标准位置：设置 -> 集市 -> 已下载 -> 插件齿轮）
+  _buildSettingPanel() {
     const mobile = _isMobile();
-    const escapeCandidates = ["*", "#", "_", "~", ">", "[", "]", "|", "+", "!"];
-    const charHints = { "*": "&#92;*", "#": "&#96;#&#96;", "_": "&#92;_", "~": "&#92;~", ">": "&#92;>", "[": "&#92;[", "]": "&#92;]", "|": "&#92;|", "+": "&#92;+", "!": "&#92;!" };
-    const charChecks = escapeCandidates.map((c) => {
-      const checked = this.escapeChars.includes(c) ? "checked" : "";
-      return '<label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin:0 10px 6px 0;">'
-        + '<input type="checkbox" name="cfg-escape-char" value="' + c + '" ' + checked + '/>'
-        + '<span><code>' + c + '</code> → <code>' + charHints[c] + '</code></span></label>';
-    }).join("");
-
-    const dialog = new Dialog({
-      title: "转义 · 设置",
-      width: mobile ? "92%" : "480px",
-      content: `
-        <div style="padding:20px 24px 0;font-size:13px;line-height:2;">
-          <div class="lt-settings-section">自动转义</div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px;">
-            <input type="checkbox" id="cfg-auto-escape" ${this.autoEscapeMode ? "checked" : ""}/>
-            <span>开启自动转义（* → \\* ，# → 行内代码）</span>
-          </label>
-          <div style="margin:4px 0;color:var(--b3-empty-color);">自动转义的字符（默认 * 和 #）：</div>
-          <div style="display:flex;flex-wrap:wrap;margin-bottom:6px;">${charChecks}</div>
-          <div style="font-size:12px;color:var(--b3-empty-color);margin-bottom:4px;">
-            # 用行内代码包裹（浅灰背景），其它用反斜杠前缀；代码块内输入的字符不受影响
-          </div>
-
-          <div class="lt-settings-divider"></div>
-
-          <div class="lt-settings-section">富文本粘贴</div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
-            <input type="checkbox" id="cfg-rich-paste" ${this.richPasteEnabled ? "checked" : ""}/>
-            <span>自动拦截粘贴，调用内核 API 本地化图片</span>
-          </label>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-            <span>图片保存子目录：</span>
-            <input type="text" id="cfg-asset-subdir" class="b3-text-field fn__size200" value="${this.assetSubdir}" placeholder="留空=默认 assets/"/>
-          </div>
-          <div style="font-size:12px;color:var(--b3-empty-color);margin-bottom:4px;">
-            如填 <code>wechat</code>，图片存到 <code>assets/wechat/</code>（仅字母数字下划线连字符）
-          </div>
-
-          <div class="lt-settings-warn">
-            <b>说明</b><br/>
-            • <b>*</b> 用反斜杠 <code>\\*</code> 保护<br/>
-            • <b>#</b> 用行内代码 <code>\`#\`</code> 保护（<code>\\#</code> 和零宽空格均被思源引擎忽略）<br/>
-            • 顶部栏第三个按钮可一键切换自动转义<br/>
-            • 富粘贴使用内核 <code>/api/extension/copy</code>
-          </div>
-        </div>
-        <div class="b3-dialog__action" style="padding:12px 24px 16px;">
-          <button class="b3-button" id="cfg-cancel" style="margin-right:8px;">取消</button>
-          <button class="b3-button b3-button--primary" id="cfg-ok">保存</button>
-        </div>`,
+    this.setting = new Setting({
+      width: mobile ? "92%" : "560px",
+      height: mobile ? "auto" : "auto",
+      confirmCallback: () => {
+        this._saveConfig();
+        showMessage("已保存", 2000, "info");
+      },
     });
 
-    const $ = (s) => dialog.element.querySelector(s);
-    $("#cfg-ok").addEventListener("click", async () => {
-      const newAE = $("#cfg-auto-escape").checked;
-      const newRP = $("#cfg-rich-paste").checked;
-      if (newAE !== this.autoEscapeMode) {
-        this.autoEscapeMode = newAE;
-        newAE ? this._enableAutoEscape() : this._disableAutoEscape();
-        this._updateEscapeButton();
-      }
-      this.richPasteEnabled = newRP;
-      const newChars = [...dialog.element.querySelectorAll('input[name="cfg-escape-char"]:checked')].map((cb) => (cb as HTMLInputElement).value);
-      this.escapeChars = newChars.length ? newChars : ["*", "#"];
-      this.assetSubdir = ($("#cfg-asset-subdir").value || "").trim();
-      await this._saveConfig();
-      dialog.destroy();
-      showMessage("已保存", 2000, "info");
+    this.setting.addItem({
+      title: "自动转义",
+      description: "开启后输入 * # _ 等会被自动保护（* -> \*，# -> 行内代码）。代码块内不受影响。",
+      createActionElement: () => {
+        const el = document.createElement("input");
+        el.type = "checkbox";
+        el.id = "cfg-auto-escape";
+        el.checked = this.autoEscapeMode;
+        el.addEventListener("change", () => {
+          const v = el.checked;
+          if (v !== this.autoEscapeMode) {
+            this.autoEscapeMode = v;
+            v ? this._enableAutoEscape() : this._disableAutoEscape();
+            this._updateEscapeButton();
+          }
+        });
+        return el;
+      },
     });
 
-    $("#cfg-cancel").addEventListener("click", () => dialog.destroy());
+    this.setting.addItem({
+      title: "自动转义的字符",
+      description: "默认 * 和 #。# 用行内代码包裹，其它用反斜杠前缀。",
+      createActionElement: () => {
+        const wrap = document.createElement("div");
+        wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 12px;";
+        const candidates = ["*", "#", "_", "~", ">", "[", "]", "|", "+", "!"];
+        candidates.forEach((c) => {
+          const label = document.createElement("label");
+          label.style.cssText = "display:inline-flex;align-items:center;gap:4px;cursor:pointer;";
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.value = c;
+          cb.className = "cfg-escape-char";
+          cb.checked = this.escapeChars.includes(c);
+          const span = document.createElement("span");
+          span.innerHTML = "<code>" + c + "</code>";
+          label.appendChild(cb);
+          label.appendChild(span);
+          wrap.appendChild(label);
+        });
+        wrap.addEventListener("change", () => {
+          const chars = Array.from(wrap.querySelectorAll("input.cfg-escape-char:checked"))
+            .map((cb) => (cb as HTMLInputElement).value);
+          this.escapeChars = chars.length ? chars : ["*", "#"];
+        });
+        return wrap;
+      },
+    });
+
+    this.setting.addItem({
+      title: "富文本粘贴",
+      description: "自动拦截粘贴，调用内核 API 本地化图片（/api/extension/copy）。",
+      createActionElement: () => {
+        const el = document.createElement("input");
+        el.type = "checkbox";
+        el.id = "cfg-rich-paste";
+        el.checked = this.richPasteEnabled;
+        el.addEventListener("change", () => { this.richPasteEnabled = el.checked; });
+        return el;
+      },
+    });
+
+    this.setting.addItem({
+      title: "图片保存子目录",
+      description: "如填 wechat，图片存到 assets/wechat/（仅字母数字下划线连字符）。留空=默认 assets/。",
+      createActionElement: () => {
+        const el = document.createElement("input");
+        el.type = "text";
+        el.id = "cfg-asset-subdir";
+        el.className = "b3-text-field fn__size200";
+        el.value = this.assetSubdir;
+        el.placeholder = "留空=默认 assets/";
+        el.addEventListener("input", () => { this.assetSubdir = el.value.trim(); });
+        return el;
+      },
+    });
   }
+
 
 // 工具方法
   _getCurrentBlockId(protyle?) {
