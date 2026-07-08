@@ -242,7 +242,6 @@ export default class LiteralTextPlugin extends Plugin {
       this._enableAutoEscape();
     }
 
-    showMessage("转义 v2.7.0 已加载 ", 2500, "info");
     console.log("[转义] 加载完成，前端：" + getFrontend() + "，自动转义：" + (this.autoEscapeMode ? "开启" : "关闭"));
   }
 

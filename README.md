@@ -1,6 +1,6 @@
 # 转义 / Escape
 
-![Version](https://img.shields.io/badge/version-2.8.3-brightgreen)
+![Version](https://img.shields.io/badge/version-2.8.4-brightgreen)
 
 ![Min App](https://img.shields.io/badge/siyuan-%E2%89%A5%203.7.0-blue)
 
@@ -169,6 +169,7 @@ esbuild-build.js    # 构建脚本
 
 | 版本    | 日期         | 变更                                                                   |
 | ----- | ---------- | -------------------------------------------------------------------- |
+| 2.8.4 | 2026-07-09 | 移除插件加载时的"已加载"提示消息（加载提示属多余打扰，已去除）；补全 plugin.json 字段（disabledInPublish / readme / keywords / icon），移除冗余的 i18n 声明 |
 | 2.8.3 | 2026-07-08 | 设置入口从编辑器 `/` 斜杠命令移至标准插件设置面板（设置 → 集市 → 已下载 → 插件齿轮），更易发现；锁定 siyuan 依赖为 1.1.9 以通过类型检查 |
 | 2.8.2 | 2026-07-08 | 清理源码中的 AI 风格注释装饰：移除等号分隔横幅、`★`/`✅`/`❌` 标记与验证表样式，改为普通注释；同步去除尾随空格。功能与构建行为不变 |
 | 2.8.1 | 2026-07-08 | 源码由纯 JS 迁移至 TypeScript（esbuild 仍输出 CJS 产物）；`tsc --noEmit` 严格类型检查零错误，新增 `npm run check` 脚本；构建与运行行为不变 |
@@ -189,4 +190,4 @@ esbuild-build.js    # 构建脚本
 
 ## 开源协议
 
-本项目基于 [MIT License](./LICENSE) 开源。Copyright © 2026 zfb517。
+本项目基于 [MIT License](https://github.com/zfb517/siyuan-plugin-literal-text/blob/main/LICENSE) 开源。Copyright © 2026 zfb517。

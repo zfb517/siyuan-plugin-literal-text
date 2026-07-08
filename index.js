@@ -180,7 +180,6 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     if (this.autoEscapeMode) {
       this._enableAutoEscape();
     }
-    (0, import_siyuan.showMessage)("\u8F6C\u4E49 v2.7.0 \u5DF2\u52A0\u8F7D ", 2500, "info");
     console.log("[\u8F6C\u4E49] \u52A0\u8F7D\u5B8C\u6210\uFF0C\u524D\u7AEF\uFF1A" + (0, import_siyuan.getFrontend)() + "\uFF0C\u81EA\u52A8\u8F6C\u4E49\uFF1A" + (this.autoEscapeMode ? "\u5F00\u542F" : "\u5173\u95ED"));
   }
   onLayoutReady() {
