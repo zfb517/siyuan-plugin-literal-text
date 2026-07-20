@@ -59,6 +59,20 @@ const ICON_PASTE_ID    = "iconPaste";
 const ICON_ESCAPE_ON_ID  = "iconShieldOn";
 const ICON_ESCAPE_OFF_ID = "iconShieldOff";
 
+/**
+ * 全局拦截器槽位：以 document 为单一真相源记录"当前生效的 keydown 拦截器"。
+ * 思源插件在启用/禁用、热重载时可能创建新实例而旧实例的 onunload 未被调用，
+ * 导致旧的 document 级监听器泄漏；本槽位保证全局至多一个生效拦截器，
+ * 新实例启用时先摘除旧拦截器，旧拦截器下次触发时也会自我清除，杜绝泄漏后持续拦截 * #。
+ */
+const ESC_SLOT = "__literalTextEscapeHandler";
+function _getEscSlot(): ((e: any) => void) | null {
+  return (document as any)[ESC_SLOT] || null;
+}
+function _setEscSlot(h: ((e: any) => void) | null) {
+  (document as any)[ESC_SLOT] = h;
+}
+
 // 辅助函数
 const _isMobile = () => {
   const f = getFrontend();
@@ -83,6 +97,8 @@ export default class LiteralTextPlugin extends Plugin {
   pasteHandler!: ((event: any) => Promise<void>) | null;
   _escapeHandler!: ((e: any) => void) | null;
   _escapeTopBarBtn!: any;
+  /** 卸载标记：onunload 第一时间置真，监听器据此自我清除，防止泄漏后持续拦截 * # */
+  _destroyed!: boolean;
   _savedRange!: Range | null;
   _savedBlockId!: string | null;
   _savedProtyle!: any;
@@ -115,6 +131,7 @@ export default class LiteralTextPlugin extends Plugin {
     this.pasteHandler = null;
     this._escapeHandler = null;
     this._escapeTopBarBtn = null;
+    this._destroyed = false;
 
     this._savedRange = null;
     this._savedBlockId = null;
@@ -289,16 +306,25 @@ export default class LiteralTextPlugin extends Plugin {
   }
 
   onunload() {
-    if (this._escapeHandler) {
-      document.removeEventListener("keydown", this._escapeHandler, true);
-      this._escapeHandler = null;
-    }
+    // 第一时间置标记：即使后续清理因异常中断，泄漏的监听器也会在下次按键时自我清除
+    this._destroyed = true;
+    this._removeEscapeListener();
     if (this.pasteHandler) {
       this.eventBus.off("paste", this.pasteHandler);
       this.pasteHandler = null;
     }
     this._escapeTopBarBtn = null;
     console.log("[转义] 已卸载");
+  }
+
+  /** 集中移除全局 keydown 拦截监听器（文档捕获阶段） */
+  _removeEscapeListener() {
+    const h = this._escapeHandler;
+    if (h) {
+      document.removeEventListener("keydown", h, true);
+    }
+    if (_getEscSlot() === h) _setEscSlot(null);
+    this._escapeHandler = null;
   }
 
   /* ---------- 配置持久化 ---------- */
@@ -310,8 +336,11 @@ export default class LiteralTextPlugin extends Plugin {
     console.log("[转义] 保存配置:", JSON.stringify(this.config));
     try {
       await this.saveData(STORAGE_KEY, this.config);
+      return true;
     } catch (err: any) {
       console.error("[转义] 配置保存失败:", err);
+      showMessage("保存失败：" + (err?.message || String(err)), 5000, "error");
+      return false;
     }
   }
 
@@ -583,14 +612,19 @@ export default class LiteralTextPlugin extends Plugin {
   }
 
   _enableAutoEscape() {
-    if (this._escapeHandler) return;
-
     /**
      * # 字符自动转义：
      * 经多次验证，\# 会被 Lute 块级扫描器吃掉仍渲染为标签，\u200B# 的零宽空格被 Lute 忽略继续解析 #，
      * 最终采用 `#` 行内代码包裹方案，Lute 不解析行内代码内部内容。
      */
-    this._escapeHandler = (e) => {
+    const handler = (e: any) => {
+      // 自我清除：若本监听器已不是当前生效拦截器（被新实例取代）或插件已卸载，
+      // 则从文档摘除自身并不再拦截，防止泄漏后持续阻断 markdown 的 * # 输入
+      if (this._destroyed || _getEscSlot() !== handler) {
+        document.removeEventListener("keydown", handler, true);
+        if (_getEscSlot() === handler) _setEscSlot(null);
+        return;
+      }
       // 输入法合成中（中文/日文等）不拦截，避免干扰正常输入
       if (e.isComposing || e.key === "Process") return;
       if (!this.autoEscapeMode) return;
@@ -608,14 +642,17 @@ export default class LiteralTextPlugin extends Plugin {
         if (p?.insert) p.insert(safeChar);
       }
     };
-    document.addEventListener("keydown", this._escapeHandler, true);
+
+    // 先摘除任何先前注册的拦截器（含其它实例泄漏的），保证全局唯一
+    const prev = _getEscSlot();
+    if (prev) document.removeEventListener("keydown", prev, true);
+    this._escapeHandler = handler;
+    document.addEventListener("keydown", handler, true);
+    _setEscSlot(handler);
   }
 
   _disableAutoEscape() {
-    if (this._escapeHandler) {
-      document.removeEventListener("keydown", this._escapeHandler, true);
-      this._escapeHandler = null;
-    }
+    this._removeEscapeListener();
   }
 
 // 三、富文本粘贴
@@ -854,9 +891,9 @@ export default class LiteralTextPlugin extends Plugin {
     this.setting = new Setting({
       width: mobile ? "92%" : "560px",
       height: mobile ? "auto" : "auto",
-      confirmCallback: () => {
-        this._saveConfig();
-        showMessage("已保存", 2000, "info");
+      confirmCallback: async () => {
+        const ok = await this._saveConfig();
+        if (ok) showMessage("已保存", 2000, "info");
       },
     });
 
