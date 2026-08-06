@@ -1,6 +1,6 @@
 # 转义 / Escape
 
-![Version](https://img.shields.io/badge/version-2.8.8-brightgreen)
+![Version](https://img.shields.io/badge/version-2.8.9-brightgreen)
 
 ![Min App](https://img.shields.io/badge/siyuan-%E2%89%A5%203.7.0-blue)
 
@@ -169,11 +169,12 @@ esbuild-build.js    # 构建脚本
 
 | 版本    | 日期         | 变更                                                                   |
 | ----- | ---------- | -------------------------------------------------------------------- |
-| 2.8.4 | 2026-07-09 | 移除插件加载时的"已加载"提示消息（加载提示属多余打扰，已去除）；补全 plugin.json 字段（disabledInPublish / readme / keywords / icon），移除冗余的 i18n 声明 |
-| 2.8.5 | 2026-07-19 | 移除 plugin.json 中 bazaar CI 规则禁止的 license/icon 字段；重建 index.js |
-| 2.8.6 | 2026-07-19 | 设置保存失败时显示错误提示而非静默吞掉（修复自动转义开关无法关闭问题）；confirmCallback 改为 await 保存结果 |
-| 2.8.7 | 2026-07-20 | 修复手动禁用插件后编辑器无法渲染 markdown 行级语法：自动转义 document 捕获阶段 keydown 监听器在卸载/热重载时泄漏，残留监听器持续阻止 * #；以 document 为唯一真相源登记当前生效拦截器 + 自我清除彻底杜绝泄漏；一并补齐 v2.8.6 设置保存修复 |
+| 2.8.9 | 2026-08-06 | 修正 README「版本历史」中 2.8.x 区段的排序错误（2.8.4→2.8.8→2.8.3 的乱序改为自新到旧的降序），无代码逻辑变更 |
 | 2.8.8 | 2026-08-06 | 适配思源 v3.7.3「Extract lite version of protyle」：移除脆弱的顶栏 isConnected 存活自检（v3.7.3 顶栏 DOM 重建会误触发、导致拦截器在首次按键时被静默移除、转义失效）；转义重插入优先用 protyle.insert() 官方 API，仅回退 execCommand；保留 beforeinput 兜底；清理按键级调试日志 |
+| 2.8.7 | 2026-07-20 | 修复手动禁用插件后编辑器无法渲染 markdown 行级语法：自动转义 document 捕获阶段 keydown 监听器在卸载/热重载时泄漏，残留监听器持续阻止 * #；以 document 为唯一真相源登记当前生效拦截器 + 自我清除彻底杜绝泄漏；一并补齐 v2.8.6 设置保存修复 |
+| 2.8.6 | 2026-07-19 | 设置保存失败时显示错误提示而非静默吞掉（修复自动转义开关无法关闭问题）；confirmCallback 改为 await 保存结果 |
+| 2.8.5 | 2026-07-19 | 移除 plugin.json 中 bazaar CI 规则禁止的 license/icon 字段；重建 index.js |
+| 2.8.4 | 2026-07-09 | 移除插件加载时的"已加载"提示消息（加载提示属多余打扰，已去除）；补全 plugin.json 字段（disabledInPublish / readme / keywords / icon），移除冗余的 i18n 声明 |
 | 2.8.3 | 2026-07-08 | 设置入口从编辑器 `/` 斜杠命令移至标准插件设置面板（设置 → 集市 → 已下载 → 插件齿轮），更易发现；锁定 siyuan 依赖为 1.1.9 以通过类型检查 |
 | 2.8.2 | 2026-07-08 | 清理源码中的 AI 风格注释装饰：移除等号分隔横幅、`★`/`✅`/`❌` 标记与验证表样式，改为普通注释；同步去除尾随空格。功能与构建行为不变 |
 | 2.8.1 | 2026-07-08 | 源码由纯 JS 迁移至 TypeScript（esbuild 仍输出 CJS 产物）；`tsc --noEmit` 严格类型检查零错误，新增 `npm run check` 脚本；构建与运行行为不变 |
