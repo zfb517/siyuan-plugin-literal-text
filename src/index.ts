@@ -1,5 +1,15 @@
 /**
- * 思源笔记插件 - 转义 v2.7.0
+ * 思源笔记插件 - 转义 v2.8.8
+ *
+ * v2.8.8 变更（适配思源 v3.7.3「Extract lite version of protyle」）：
+ *   - 移除 keydown 拦截器里基于「顶栏按钮 isConnected」的自我摘除：
+ *     该启发式在 v3.7.3 顶栏 DOM 重建时会误判插件已禁用，导致拦截器在首次按键时
+ *     被静默移除，* # 后续不再被转义、直接被 protyle 渲染成斜体/标签。
+ *     改用 ESC_SLOT（全局唯一槽位）+ _destroyed 标记做泄漏防护，更为可靠。
+ *   - 转义重插入优先使用 protyle 官方 insert() API（走思源输入管线），
+ *     仅在拿不到 protyle 实例时回退 document.execCommand("insertText")。
+ *     避免 execCommand 在 lite protyle 下被编辑器模型忽略/回滚。
+ *   - beforeinput 兜底保留，作为 keydown 未拦截（如部分输入法）时的第二道防线。
  *
  * 功能一：字面文本输入
  *   Ctrl+Shift+L  弹窗输入，不被 Markdown 渲染
@@ -96,6 +106,7 @@ export default class LiteralTextPlugin extends Plugin {
   assetSubdir!: string;
   pasteHandler!: ((event: any) => Promise<void>) | null;
   _escapeHandler!: ((e: any) => void) | null;
+  _beforeInputHandler!: ((e: any) => void) | null;
   _escapeTopBarBtn!: any;
   /** 卸载标记：onunload 第一时间置真，监听器据此自我清除，防止泄漏后持续拦截 * # */
   _destroyed!: boolean;
@@ -130,6 +141,7 @@ export default class LiteralTextPlugin extends Plugin {
 
     this.pasteHandler = null;
     this._escapeHandler = null;
+    this._beforeInputHandler = null;
     this._escapeTopBarBtn = null;
     this._destroyed = false;
 
@@ -317,7 +329,18 @@ export default class LiteralTextPlugin extends Plugin {
     console.log("[转义] 已卸载");
   }
 
-  /** 集中移除全局 keydown 拦截监听器（文档捕获阶段） */
+  /** 判断事件目标是否在 protyle 编辑器可编辑区域内 */
+  _isInProtyle(e: any): boolean {
+    const target = e.target;
+    if (!target) return false;
+    if (typeof target.closest !== "function") return false;
+    if (!target.closest(".protyle-wysiwyg")) return false;
+    // 代码块 / 行内代码内不打断：里面本就是字面量
+    if (target.closest(".code-block, [data-type='code-block'], code")) return false;
+    return true;
+  }
+
+  /** 集中移除全局 keydown / beforeinput 拦截监听器 */
   _removeEscapeListener() {
     const h = this._escapeHandler;
     if (h) {
@@ -325,6 +348,12 @@ export default class LiteralTextPlugin extends Plugin {
     }
     if (_getEscSlot() === h) _setEscSlot(null);
     this._escapeHandler = null;
+
+    const b = this._beforeInputHandler;
+    if (b) {
+      document.removeEventListener("beforeinput", b, true);
+    }
+    this._beforeInputHandler = null;
   }
 
   /* ---------- 配置持久化 ---------- */
@@ -525,10 +554,18 @@ export default class LiteralTextPlugin extends Plugin {
     this._fallbackInsert(text);
   }
 
+  /**
+   * 转义重插入：优先用 protyle 官方 insert()（走思源输入管线，lite protyle 下最可靠），
+   * 仅在拿不到 protyle 实例时回退 document.execCommand("insertText")。
+   */
   _insertTextSync(text) {
-    try { if (document.execCommand("insertText", false, text)) return true; } catch (e: any) {}
     const p = this._getActiveProtyle();
-    if (p?.insert) { try { p.insert(text); return true; } catch (e: any) {} }
+    if (p && typeof p.insert === "function") {
+      try { p.insert(text); return true; } catch (e: any) {
+        console.warn("[转义] protyle.insert 失败，回退 execCommand:", e.message);
+      }
+    }
+    try { if (document.execCommand("insertText", false, text)) return true; } catch (e: any) {}
     return false;
   }
 
@@ -618,36 +655,57 @@ export default class LiteralTextPlugin extends Plugin {
      * 最终采用 `#` 行内代码包裹方案，Lute 不解析行内代码内部内容。
      */
     const handler = (e: any) => {
-      // 自我清除：若本监听器已不是当前生效拦截器（被新实例取代）或插件已卸载，
-      // 则从文档摘除自身并不再拦截，防止泄漏后持续阻断 markdown 的 * # 输入
+      // 自我清除：若插件已卸载（onunload 置位）或本监听器已不是当前生效拦截器
+      // （被新实例取代，见 ESC_SLOT），则从文档摘除自身并不再拦截，
+      // 防止泄漏后持续阻断 markdown 的 * # 输入。
+      // 注意：不再依赖顶栏按钮 isConnected 判断存活——v3.7.3 顶栏 DOM 重建会让
+      // 该判断误触发，导致拦截器在首次按键时被静默移除、转义失效。
       if (this._destroyed || _getEscSlot() !== handler) {
         document.removeEventListener("keydown", handler, true);
         if (_getEscSlot() === handler) _setEscSlot(null);
+        this._escapeHandler = null;
         return;
       }
       // 输入法合成中（中文/日文等）不拦截，避免干扰正常输入
       if (e.isComposing || e.key === "Process") return;
       if (!this.autoEscapeMode) return;
-      if (!e.target.closest?.(".protyle-wysiwyg")) return;
-      // 代码块 / 行内代码内不打断：里面本就是字面量，再加转义是画蛇添足
-      if (e.target.closest?.(".code-block, [data-type='code-block'], code")) return;
+      if (!this._isInProtyle(e)) return;
       if (!this.escapeChars.includes(e.key)) return;
 
       e.preventDefault();
       e.stopPropagation();
 
       const safeChar = this._safeCharFor(e.key);
-      if (!document.execCommand("insertText", false, safeChar)) {
-        const p = this._getActiveProtyle();
-        if (p?.insert) p.insert(safeChar);
+      this._insertTextSync(safeChar);
+    };
+
+    // beforeinput 兜底：思源 v3.7.3+ 可能在 keydown 阶段阻止插件监听器，
+    // 而在文本实际插入前的 beforeinput 事件更接近输入真相，作为第二道防线。
+    const beforeInputHandler = (e: any) => {
+      if (this._destroyed || _getEscSlot() !== handler) {
+        document.removeEventListener("beforeinput", beforeInputHandler, true);
+        return;
       }
+      if (!this.autoEscapeMode) return;
+      if (!this._isInProtyle(e)) return;
+      if (e.inputType !== "insertText" || !e.data) return;
+      const ch = e.data;
+      if (ch.length !== 1 || !this.escapeChars.includes(ch)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const safeChar = this._safeCharFor(ch);
+      this._insertTextSync(safeChar);
     };
 
     // 先摘除任何先前注册的拦截器（含其它实例泄漏的），保证全局唯一
     const prev = _getEscSlot();
     if (prev) document.removeEventListener("keydown", prev, true);
     this._escapeHandler = handler;
+    this._beforeInputHandler = beforeInputHandler;
     document.addEventListener("keydown", handler, true);
+    document.addEventListener("beforeinput", beforeInputHandler, true);
     _setEscSlot(handler);
   }
 

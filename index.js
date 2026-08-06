@@ -46,6 +46,13 @@ var ICON_CODE_ID = "iconEscape";
 var ICON_PASTE_ID = "iconPaste";
 var ICON_ESCAPE_ON_ID = "iconShieldOn";
 var ICON_ESCAPE_OFF_ID = "iconShieldOff";
+var ESC_SLOT = "__literalTextEscapeHandler";
+function _getEscSlot() {
+  return document[ESC_SLOT] || null;
+}
+function _setEscSlot(h) {
+  document[ESC_SLOT] = h;
+}
 var _isMobile = () => {
   const f = (0, import_siyuan.getFrontend)();
   return f === "mobile" || f === "browser-mobile";
@@ -66,7 +73,9 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     console.log("[\u8F6C\u4E49] autoEscape=" + this.autoEscapeMode + " richPaste=" + this.richPasteEnabled + " escapeChars=" + JSON.stringify(this.escapeChars) + " assetSubdir=" + this.assetSubdir);
     this.pasteHandler = null;
     this._escapeHandler = null;
+    this._beforeInputHandler = null;
     this._escapeTopBarBtn = null;
+    this._destroyed = false;
     this._savedRange = null;
     this._savedBlockId = null;
     this._savedProtyle = null;
@@ -215,16 +224,37 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
   }
   onunload() {
-    if (this._escapeHandler) {
-      document.removeEventListener("keydown", this._escapeHandler, true);
-      this._escapeHandler = null;
-    }
+    this._destroyed = true;
+    this._removeEscapeListener();
     if (this.pasteHandler) {
       this.eventBus.off("paste", this.pasteHandler);
       this.pasteHandler = null;
     }
     this._escapeTopBarBtn = null;
     console.log("[\u8F6C\u4E49] \u5DF2\u5378\u8F7D");
+  }
+  /** 判断事件目标是否在 protyle 编辑器可编辑区域内 */
+  _isInProtyle(e) {
+    const target = e.target;
+    if (!target) return false;
+    if (typeof target.closest !== "function") return false;
+    if (!target.closest(".protyle-wysiwyg")) return false;
+    if (target.closest(".code-block, [data-type='code-block'], code")) return false;
+    return true;
+  }
+  /** 集中移除全局 keydown / beforeinput 拦截监听器 */
+  _removeEscapeListener() {
+    const h = this._escapeHandler;
+    if (h) {
+      document.removeEventListener("keydown", h, true);
+    }
+    if (_getEscSlot() === h) _setEscSlot(null);
+    this._escapeHandler = null;
+    const b = this._beforeInputHandler;
+    if (b) {
+      document.removeEventListener("beforeinput", b, true);
+    }
+    this._beforeInputHandler = null;
   }
   /* ---------- 配置持久化 ---------- */
   async _saveConfig() {
@@ -235,8 +265,11 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     console.log("[\u8F6C\u4E49] \u4FDD\u5B58\u914D\u7F6E:", JSON.stringify(this.config));
     try {
       await this.saveData(STORAGE_KEY, this.config);
+      return true;
     } catch (err) {
       console.error("[\u8F6C\u4E49] \u914D\u7F6E\u4FDD\u5B58\u5931\u8D25:", err);
+      (0, import_siyuan.showMessage)("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (err?.message || String(err)), 5e3, "error");
+      return false;
     }
   }
   /** 更新顶栏转义按钮状态（切换 Symbol 引用） */
@@ -450,18 +483,23 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     this._fallbackInsert(text);
   }
+  /**
+   * 转义重插入：优先用 protyle 官方 insert()（走思源输入管线，lite protyle 下最可靠），
+   * 仅在拿不到 protyle 实例时回退 document.execCommand("insertText")。
+   */
   _insertTextSync(text) {
-    try {
-      if (document.execCommand("insertText", false, text)) return true;
-    } catch (e) {
-    }
     const p = this._getActiveProtyle();
-    if (p?.insert) {
+    if (p && typeof p.insert === "function") {
       try {
         p.insert(text);
         return true;
       } catch (e) {
+        console.warn("[\u8F6C\u4E49] protyle.insert \u5931\u8D25\uFF0C\u56DE\u9000 execCommand:", e.message);
       }
+    }
+    try {
+      if (document.execCommand("insertText", false, text)) return true;
+    } catch (e) {
     }
     return false;
   }
@@ -540,28 +578,47 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
   }
   _enableAutoEscape() {
-    if (this._escapeHandler) return;
-    this._escapeHandler = (e) => {
+    const handler = (e) => {
+      if (this._destroyed || _getEscSlot() !== handler) {
+        document.removeEventListener("keydown", handler, true);
+        if (_getEscSlot() === handler) _setEscSlot(null);
+        this._escapeHandler = null;
+        return;
+      }
       if (e.isComposing || e.key === "Process") return;
       if (!this.autoEscapeMode) return;
-      if (!e.target.closest?.(".protyle-wysiwyg")) return;
-      if (e.target.closest?.(".code-block, [data-type='code-block'], code")) return;
+      if (!this._isInProtyle(e)) return;
       if (!this.escapeChars.includes(e.key)) return;
       e.preventDefault();
       e.stopPropagation();
       const safeChar = this._safeCharFor(e.key);
-      if (!document.execCommand("insertText", false, safeChar)) {
-        const p = this._getActiveProtyle();
-        if (p?.insert) p.insert(safeChar);
-      }
+      this._insertTextSync(safeChar);
     };
-    document.addEventListener("keydown", this._escapeHandler, true);
+    const beforeInputHandler = (e) => {
+      if (this._destroyed || _getEscSlot() !== handler) {
+        document.removeEventListener("beforeinput", beforeInputHandler, true);
+        return;
+      }
+      if (!this.autoEscapeMode) return;
+      if (!this._isInProtyle(e)) return;
+      if (e.inputType !== "insertText" || !e.data) return;
+      const ch = e.data;
+      if (ch.length !== 1 || !this.escapeChars.includes(ch)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const safeChar = this._safeCharFor(ch);
+      this._insertTextSync(safeChar);
+    };
+    const prev = _getEscSlot();
+    if (prev) document.removeEventListener("keydown", prev, true);
+    this._escapeHandler = handler;
+    this._beforeInputHandler = beforeInputHandler;
+    document.addEventListener("keydown", handler, true);
+    document.addEventListener("beforeinput", beforeInputHandler, true);
+    _setEscSlot(handler);
   }
   _disableAutoEscape() {
-    if (this._escapeHandler) {
-      document.removeEventListener("keydown", this._escapeHandler, true);
-      this._escapeHandler = null;
-    }
+    this._removeEscapeListener();
   }
   // 三、富文本粘贴
   _initPaste() {
@@ -802,9 +859,9 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     this.setting = new import_siyuan.Setting({
       width: mobile ? "92%" : "560px",
       height: mobile ? "auto" : "auto",
-      confirmCallback: () => {
-        this._saveConfig();
-        (0, import_siyuan.showMessage)("\u5DF2\u4FDD\u5B58", 2e3, "info");
+      confirmCallback: async () => {
+        const ok = await this._saveConfig();
+        if (ok) (0, import_siyuan.showMessage)("\u5DF2\u4FDD\u5B58", 2e3, "info");
       }
     });
     this.setting.addItem({
