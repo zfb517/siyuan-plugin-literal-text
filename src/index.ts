@@ -1,40 +1,26 @@
 /**
- * 思源笔记插件 - 转义 v2.8.9
+ * 思源笔记插件 - 转义 v2.8.11
  *
- * v2.8.9 变更：
- *   - 修正 README「版本历史」中 2.8.x 区段的排序错误（改为自新到旧的降序），
- *     无代码逻辑变更。
+ * v2.8.11 变更：
+ *   - 精简顶部栏：移除「选区转转义」独立按钮，仅保留 字面文本 / 富粘贴 / 自动转义 三个按钮。
+ *   - 精简斜杠菜单：9 项合并为 6 项（字面/转义输入合并、选区字面/转义合并为子菜单、
+ *     全半角合并为子菜单）。
+ *   - 新增右键/块标菜单入口：选中已转义文本后，右键菜单或块标菜单可直接「反字面」
+ *     还原为 Markdown。
+ *   - 将 # 的安全替换从行内代码包裹统一为反斜杠 \#，与 * 的 \* 行为完全一致。
+ *   - 修复 v3.8.0+ 下 Ctrl+Shift+E/L/V 快捷键可能失效的问题：保留 addCommand 注册并增加
+ *     window 级兜底监听器。
+ *   - 清理非必要调试日志。
  *
- * v2.8.8 变更（适配思源 v3.7.3「Extract lite version of protyle」）：
- *   - 移除 keydown 拦截器里基于「顶栏按钮 isConnected」的自我摘除：
- *     该启发式在 v3.7.3 顶栏 DOM 重建时会误判插件已禁用，导致拦截器在首次按键时
- *     被静默移除，* # 后续不再被转义、直接被 protyle 渲染成斜体/标签。
- *     改用 ESC_SLOT（全局唯一槽位）+ _destroyed 标记做泄漏防护，更为可靠。
- *   - 转义重插入优先使用 protyle 官方 insert() API（走思源输入管线），
- *     仅在拿不到 protyle 实例时回退 document.execCommand("insertText")。
- *     避免 execCommand 在 lite protyle 下被编辑器模型忽略/回滚。
- *   - beforeinput 兜底保留，作为 keydown 未拦截（如部分输入法）时的第二道防线。
- *
- * 功能一：字面文本输入
- *   Ctrl+Shift+L  弹窗输入，不被 Markdown 渲染
- *   Ctrl+Shift+E  切换自动转义模式
- *   /字面  /literal  斜杠命令
- *
- * 功能二：自动转义（核心）
- *   开启后：按 * 自动插入 \*  （不被渲染为斜体/粗体）
- *          按 # 自动插入 `#` （不被渲染为标签/标题）
- *   Ctrl+Shift+E 切换 | 顶部栏图标点击切换
- *
- * 功能三：富文本粘贴（公众号/网页粘贴自动下载图片）
- *   Ctrl+Shift+V  手动触发 | /富文本 斜杠命令
- *
- * v2.7.0 变更：
- *   - 代码质量清理：移除 CSS 死代码、僵尸 i18n key、冗余方法
- *   - SVG 图标改用 currentColor 跟随主题
- *   - _htmlToMarkdown 移除多余的 new Promise 包装
+ * 功能入口：
+ *   Ctrl+Shift+L  字面文本输入弹窗
+ *   Ctrl+Shift+E  自动转义开关
+ *   Ctrl+Shift+V  富文本粘贴（自动下载图片）
+ *   /字面          斜杠命令
  */
 
-import { Plugin, Dialog, showMessage, getFrontend, getActiveEditor, getAllEditor, Setting } from "siyuan";
+
+import { Plugin, Dialog, showMessage, getFrontend, getActiveEditor, getAllEditor, Setting, Menu } from "siyuan";
 
 // 常量
 const STORAGE_KEY = "escape-config";
@@ -42,13 +28,16 @@ const API_COPY = "/api/extension/copy";
 const API_INSERT = "/api/block/insertBlock";
 
 /**
- * 安全字符映射（# 行内代码包裹是唯一可靠方案）
+ * 安全字符映射
  *
- * 经过实测验证：反斜杠转义 \* 可被 Lute 正确保留（不渲染为斜体）；
- * 行内代码包裹 `#` 时 Lute 不解析内部内容，而 \# 与 \u200B# 两种方案均失败。
+ * * 用反斜杠转义 \*，Lute 正确保留（不渲染为斜体/粗体）；
+ * # 在旧版 Lute 下 \# 会被块级扫描器吃掉，故曾用行内代码 `#` 包裹；
+ * 但行内代码无法阻止行首标题识别（## 仍被识别为标题标记）。
+ * 思源官方编辑指南明确支持 \# 显示字面 #（含行首标题/标签），v3.8.0 起稳定，
+ * 故统一改用 \#，使 * 与 # 行为完全一致。
  */
 const SAFE_ASTERISK = "\\*";       // 反斜杠转义 * — 对斜体有效
-const SAFE_HASH = "`#`";           // 反引号行内代码包裹 # — 对标签/标题有效
+const SAFE_HASH = "\\#";           // 反斜杠转义 # — 与 * 一致，对标题/标签有效
 
 // 图标定义（SVG Symbol 格式，通过 addIcons 注册） 思源 addTopBar 的 icon 参数接受 Symbol ID 字符串，不是原始 SVG！
 
@@ -118,17 +107,21 @@ export default class LiteralTextPlugin extends Plugin {
   _savedBlockId!: string | null;
   _savedProtyle!: any;
   protyleSlash!: any;
+  /** addCommand 热键失效时的兜底 keydown 监听器 */
+  _fallbackKeydownHandler!: ((e: KeyboardEvent) => void) | null;
+  /** 防止 addCommand 与兜底监听器重复触发同一快捷键 */
+  _lastHotkeyToggleTime!: number;
+  /** 右键/块标菜单事件处理器引用，用于 onunload 注销 */
+  _contextMenuHandler!: ((e: any) => void) | null;
+  _blockIconMenuHandler!: ((e: any) => void) | null;
 
   /* ---------- 生命周期 ---------- */
   async onload() {
-    console.log("[转义] v2.7.0 开始加载...");
-
-    /* --- 加载配置（带日志） --- */
+    /* --- 加载配置 --- */
     this.config = await this.loadData(STORAGE_KEY).catch((err) => {
       console.warn("[转义] 配置加载失败，使用默认值:", err);
       return {};
     }) || {};
-    console.log("[转义] 已加载配置:", JSON.stringify(this.config));
 
     // 默认开启自动转义（用户首次安装即生效）
     this.autoEscapeMode = this.config.autoEscape ?? true;
@@ -140,18 +133,18 @@ export default class LiteralTextPlugin extends Plugin {
     // 富粘贴图片保存子目录（assets/ 下，为空则用默认 assets/）
     this.assetSubdir = typeof this.config.assetSubdir === "string" ? this.config.assetSubdir : "";
 
-    console.log("[转义] autoEscape=" + this.autoEscapeMode + " richPaste=" + this.richPasteEnabled +
-      " escapeChars=" + JSON.stringify(this.escapeChars) + " assetSubdir=" + this.assetSubdir);
-
     this.pasteHandler = null;
     this._escapeHandler = null;
     this._beforeInputHandler = null;
     this._escapeTopBarBtn = null;
     this._destroyed = false;
-
     this._savedRange = null;
     this._savedBlockId = null;
     this._savedProtyle = null;
+    this._fallbackKeydownHandler = null;
+    this._lastHotkeyToggleTime = 0;
+    this._contextMenuHandler = null;
+    this._blockIconMenuHandler = null;
 
     /* --- 0. 注册图标（必须在 addTopBar 之前） --- */
     this.addIcons(ICON_SYMBOLS);
@@ -161,19 +154,19 @@ export default class LiteralTextPlugin extends Plugin {
       langKey: "quickLiteralInput",
       langText: "字面文本快速输入",
       hotkey: "⇧⌘L",
-      callback: () => this._handleQuickInput(),
+      callback: () => { this._lastHotkeyToggleTime = Date.now(); this._handleQuickInput(); },
     });
     this.addCommand({
       langKey: "toggleAutoEscape",
       langText: "切换自动转义",
       hotkey: "⇧⌘E",
-      callback: () => this._toggleAutoEscape(),
+      callback: () => { this._lastHotkeyToggleTime = Date.now(); this._toggleAutoEscape(); },
     });
     this.addCommand({
       langKey: "richPaste",
       langText: "富文本粘贴",
       hotkey: "⇧⌘V",
-      callback: () => this._triggerRichPaste(),
+      callback: () => { this._lastHotkeyToggleTime = Date.now(); this._triggerRichPaste(); },
     });
     this.addCommand({
       langKey: "selectionToLiteral",
@@ -206,19 +199,20 @@ export default class LiteralTextPlugin extends Plugin {
       callback: () => this._convertWidth("toFull"),
     });
 
-    /* --- 2. 斜杠命令 --- */
+    // 兜底：部分环境（v3.8.0+ / 快捷键冲突 / 用户自定义覆盖）下 addCommand 可能不触发，
+    // 额外在 window 监听 Ctrl/Cmd+Shift+E/L/V，用防抖避免与 addCommand 重复执行。
+    this._registerFallbackHotkeys();
+
+    /* --- 1.5 右键/块标菜单入口 --- */
+    this._setupContextMenus();
+
+    /* --- 2. 斜杠命令（精简后 6 项：字面/转义输入合并、选区转字面合并、全半角合并） --- */
     this.protyleSlash = [
       {
-        filter: ["字面文本", "literal", "zmbw"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">字面文本输入</span><span class="b3-list-item__meta">*# 不被渲染</span></div>',
-        id: "literal-input",
+        filter: ["字面文本", "转义文本", "literal", "escape", "zmbw", "zywb"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">字面/转义文本输入</span><span class="b3-list-item__meta">*# 不被渲染</span></div>',
+        id: "literal-escape-input",
         callback: (protyle) => this._showLiteralDialog("code", protyle),
-      },
-      {
-        filter: ["转义文本", "escape", "zywb"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">转义文本输入</span><span class="b3-list-item__meta">\\*\\# 纯文本</span></div>',
-        id: "escape-input",
-        callback: (protyle) => this._showLiteralDialog("escape", protyle),
       },
       {
         filter: ["富文本粘贴", "rich paste", "fwbzt"],
@@ -227,16 +221,10 @@ export default class LiteralTextPlugin extends Plugin {
         callback: (protyle) => this._triggerRichPaste(protyle),
       },
       {
-        filter: ["选区转字面", "selection literal", "xqzmb"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">选区转字面量</span><span class="b3-list-item__meta">选中文本→行内代码</span></div>',
+        filter: ["选区转字面", "selection literal", "xqzmb", "xqzzy"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">选区转字面</span><span class="b3-list-item__meta">选中文本→行内代码/转义</span></div>',
         id: "selection-literal",
-        callback: () => this._selectionToLiteral("code"),
-      },
-      {
-        filter: ["选区转转义", "selection escape", "xqzzy"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">选区转转义</span><span class="b3-list-item__meta">选中文本→纯文本</span></div>',
-        id: "selection-escape",
-        callback: () => this._selectionToLiteral("escape"),
+        callback: () => this._openSelectionModeMenu(),
       },
       {
         filter: ["字面块", "literal block", "zmk"],
@@ -251,16 +239,10 @@ export default class LiteralTextPlugin extends Plugin {
         callback: () => this._unescapeSelection(),
       },
       {
-        filter: ["全角转半角", "tohalf", "qjzhb"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">全角转半角</span><span class="b3-list-item__meta">１．５→1.5</span></div>',
-        id: "to-half",
-        callback: () => this._convertWidth("toHalf"),
-      },
-      {
-        filter: ["半角转全角", "tofull", "bjzqj"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">半角转全角</span><span class="b3-list-item__meta">1.5→１．５</span></div>',
-        id: "to-full",
-        callback: () => this._convertWidth("toFull"),
+        filter: ["全半角", "width", "qjzhb", "bjzqj"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">全半角切换</span><span class="b3-list-item__meta">１．５⇄1.5</span></div>',
+        id: "width-toggle",
+        callback: () => this._openWidthModeMenu(),
       },
     ];
 
@@ -274,8 +256,6 @@ export default class LiteralTextPlugin extends Plugin {
     if (this.autoEscapeMode) {
       this._enableAutoEscape();
     }
-
-    console.log("[转义] 加载完成，前端：" + getFrontend() + "，自动转义：" + (this.autoEscapeMode ? "开启" : "关闭"));
   }
 
   onLayoutReady() {
@@ -308,14 +288,6 @@ export default class LiteralTextPlugin extends Plugin {
         position: "right",
         callback: () => this._toggleAutoEscape(),
       });
-
-      // 按钮4：选区转转义（L1，纯文本字面量；行内代码可由 Ctrl+Shift+L / 第一个按钮完成）
-      this.addTopBar({
-        icon: ICON_CODE_ID,
-        title: "选区转转义（选中文本→纯文本字面量）",
-        position: "right",
-        callback: () => this._selectionToLiteral("escape"),
-      });
     } catch (e: any) {
       console.warn("[转义] 顶栏按钮注册失败（移动端可能不支持）:", e.message);
     }
@@ -325,12 +297,20 @@ export default class LiteralTextPlugin extends Plugin {
     // 第一时间置标记：即使后续清理因异常中断，泄漏的监听器也会在下次按键时自我清除
     this._destroyed = true;
     this._removeEscapeListener();
+    this._unregisterFallbackHotkeys();
     if (this.pasteHandler) {
       this.eventBus.off("paste", this.pasteHandler);
       this.pasteHandler = null;
     }
+    if (this._contextMenuHandler) {
+      this.eventBus.off("open-menu-content", this._contextMenuHandler);
+      this._contextMenuHandler = null;
+    }
+    if (this._blockIconMenuHandler) {
+      this.eventBus.off("click-blockicon", this._blockIconMenuHandler);
+      this._blockIconMenuHandler = null;
+    }
     this._escapeTopBarBtn = null;
-    console.log("[转义] 已卸载");
   }
 
   /** 判断事件目标是否在 protyle 编辑器可编辑区域内 */
@@ -360,13 +340,112 @@ export default class LiteralTextPlugin extends Plugin {
     this._beforeInputHandler = null;
   }
 
+  /** 注册 addCommand 热键的兜底监听器（解决 v3.8.0+ 部分环境下热键不触发的问题） */
+  _registerFallbackHotkeys() {
+    this._unregisterFallbackHotkeys();
+    const handler = (e: KeyboardEvent) => {
+      if (this._destroyed) return;
+      const isMod = e.ctrlKey || e.metaKey;
+      const isShift = e.shiftKey;
+      if (!isMod || !isShift) return;
+
+      const key = e.key.toUpperCase();
+      let action: (() => void) | null = null;
+      if (key === "E") action = () => this._toggleAutoEscape();
+      else if (key === "L") action = () => this._handleQuickInput();
+      else if (key === "V") action = () => this._triggerRichPaste();
+      else return;
+
+      // 防抖：若 addCommand 已触发同一动作，忽略 150ms 内的重复调用
+      const now = Date.now();
+      if (now - this._lastHotkeyToggleTime < 150) return;
+      this._lastHotkeyToggleTime = now;
+
+      e.preventDefault();
+      e.stopPropagation();
+      action();
+    };
+    this._fallbackKeydownHandler = handler;
+    window.addEventListener("keydown", handler, true);
+  }
+
+  _unregisterFallbackHotkeys() {
+    const h = this._fallbackKeydownHandler;
+    if (h) {
+      window.removeEventListener("keydown", h, true);
+      this._fallbackKeydownHandler = null;
+    }
+  }
+
+  /* ---------- 右键/块标菜单 ---------- */
+  _setupContextMenus() {
+    this._contextMenuHandler = (event: any) => this._onOpenMenuContent(event.detail);
+    this._blockIconMenuHandler = (event: any) => this._onOpenMenuContent(event.detail);
+    this.eventBus.on("open-menu-content", this._contextMenuHandler);
+    this.eventBus.on("click-blockicon", this._blockIconMenuHandler);
+  }
+
+  _onOpenMenuContent(detail: any) {
+    if (!detail?.menu || typeof detail.menu.addItem !== "function") return;
+    const sel = window.getSelection();
+    const hasSelection = sel ? !sel.isCollapsed : false;
+    detail.menu.addItem({
+      label: "反字面（还原为 Markdown）",
+      disabled: !hasSelection,
+      click: () => {
+        if (hasSelection) this._unescapeSelection();
+      },
+    });
+  }
+
+  _openSelectionModeMenu() {
+    const menu = new Menu("literal-selection-mode");
+    menu.addItem({
+      label: "转成行内代码",
+      click: () => { menu.close(); this._selectionToLiteral("code"); },
+    });
+    menu.addItem({
+      label: "转成反斜杠转义",
+      click: () => { menu.close(); this._selectionToLiteral("escape"); },
+    });
+    const rect = this._getSelectionRect();
+    menu.open({ x: rect.left, y: rect.bottom, h: rect.height });
+  }
+
+  _openWidthModeMenu() {
+    const menu = new Menu("literal-width-mode");
+    menu.addItem({
+      label: "全角转半角",
+      click: () => { menu.close(); this._convertWidth("toHalf"); },
+    });
+    menu.addItem({
+      label: "半角转全角",
+      click: () => { menu.close(); this._convertWidth("toFull"); },
+    });
+    const rect = this._getSelectionRect();
+    menu.open({ x: rect.left, y: rect.bottom, h: rect.height });
+  }
+
+  _getSelectionRect(): any {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (rect.width > 0 || rect.height > 0) return rect;
+    }
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    return {
+      left: cx, top: cy, bottom: cy, right: cx,
+      x: cx, y: cy, width: 0, height: 0,
+    };
+  }
+
   /* ---------- 配置持久化 ---------- */
   async _saveConfig() {
     this.config.autoEscape = this.autoEscapeMode;
     this.config.richPaste = this.richPasteEnabled;
     this.config.escapeChars = this.escapeChars;
     this.config.assetSubdir = this.assetSubdir;
-    console.log("[转义] 保存配置:", JSON.stringify(this.config));
     try {
       await this.saveData(STORAGE_KEY, this.config);
       return true;
@@ -527,7 +606,7 @@ export default class LiteralTextPlugin extends Plugin {
       .replace(/#/g, SAFE_HASH);
   }
 
-  /** 按字符返回其"安全替换"形式：*→\*，#→`#`（行内代码包裹），其它→\X 反斜杠前缀 */
+  /** 按字符返回其"安全替换"形式：*→\*，#→\#（反斜杠转义），其它→\X 反斜杠前缀 */
   _safeCharFor(ch) {
     if (ch === "*") return SAFE_ASTERISK;
     if (ch === "#") return SAFE_HASH;
@@ -645,7 +724,7 @@ export default class LiteralTextPlugin extends Plugin {
 
     if (this.autoEscapeMode) {
       this._enableAutoEscape();
-      showMessage("自动转义已开启：*→\\*  #→\`#\`", 2500, "info");
+      showMessage("自动转义已开启：*→\*  #→\#", 2500, "info");
     } else {
       this._disableAutoEscape();
       showMessage("自动转义已关闭", 2000, "info");
@@ -654,9 +733,8 @@ export default class LiteralTextPlugin extends Plugin {
 
   _enableAutoEscape() {
     /**
-     * # 字符自动转义：
-     * 经多次验证，\# 会被 Lute 块级扫描器吃掉仍渲染为标签，\u200B# 的零宽空格被 Lute 忽略继续解析 #，
-     * 最终采用 `#` 行内代码包裹方案，Lute 不解析行内代码内部内容。
+     * # 字符自动转义：采用 \# 反斜杠方案，与 * 行为一致。
+     * 思源官方编辑指南确认 \# 可显示字面 #（含行首标题/标签），v3.8.0 起稳定。
      */
     const handler = (e: any) => {
       // 自我清除：若插件已卸载（onunload 置位）或本监听器已不是当前生效拦截器
@@ -961,7 +1039,7 @@ export default class LiteralTextPlugin extends Plugin {
 
     this.setting.addItem({
       title: "自动转义",
-      description: "开启后输入 * # _ 等会被自动保护（* -> \*，# -> 行内代码）。代码块内不受影响。",
+      description: "开启后输入 * # _ 等会被自动保护（* -> \*，# -> \#）。代码块内不受影响。",
       createActionElement: () => {
         const el = document.createElement("input");
         el.type = "checkbox";
@@ -981,7 +1059,7 @@ export default class LiteralTextPlugin extends Plugin {
 
     this.setting.addItem({
       title: "自动转义的字符",
-      description: "默认 * 和 #。# 用行内代码包裹，其它用反斜杠前缀。",
+      description: "默认 * 和 #。# 用反斜杠转义（\\#），与 * 行为一致；其它用反斜杠前缀。",
       createActionElement: () => {
         const wrap = document.createElement("div");
         wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 12px;";

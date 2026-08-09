@@ -28,7 +28,7 @@ var STORAGE_KEY = "escape-config";
 var API_COPY = "/api/extension/copy";
 var API_INSERT = "/api/block/insertBlock";
 var SAFE_ASTERISK = "\\*";
-var SAFE_HASH = "`#`";
+var SAFE_HASH = "\\#";
 var ICON_SYMBOLS = `
 <symbol id="iconEscape" viewBox="0 0 24 24">
   <path fill="currentColor" d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/>
@@ -60,17 +60,14 @@ var _isMobile = () => {
 var LiteralTextPlugin = class extends import_siyuan.Plugin {
   /* ---------- 生命周期 ---------- */
   async onload() {
-    console.log("[\u8F6C\u4E49] v2.7.0 \u5F00\u59CB\u52A0\u8F7D...");
     this.config = await this.loadData(STORAGE_KEY).catch((err) => {
       console.warn("[\u8F6C\u4E49] \u914D\u7F6E\u52A0\u8F7D\u5931\u8D25\uFF0C\u4F7F\u7528\u9ED8\u8BA4\u503C:", err);
       return {};
     }) || {};
-    console.log("[\u8F6C\u4E49] \u5DF2\u52A0\u8F7D\u914D\u7F6E:", JSON.stringify(this.config));
     this.autoEscapeMode = this.config.autoEscape ?? true;
     this.richPasteEnabled = this.config.richPaste ?? true;
     this.escapeChars = Array.isArray(this.config.escapeChars) && this.config.escapeChars.length ? this.config.escapeChars.filter((c) => typeof c === "string" && c.length === 1) : ["*", "#"];
     this.assetSubdir = typeof this.config.assetSubdir === "string" ? this.config.assetSubdir : "";
-    console.log("[\u8F6C\u4E49] autoEscape=" + this.autoEscapeMode + " richPaste=" + this.richPasteEnabled + " escapeChars=" + JSON.stringify(this.escapeChars) + " assetSubdir=" + this.assetSubdir);
     this.pasteHandler = null;
     this._escapeHandler = null;
     this._beforeInputHandler = null;
@@ -79,24 +76,37 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     this._savedRange = null;
     this._savedBlockId = null;
     this._savedProtyle = null;
+    this._fallbackKeydownHandler = null;
+    this._lastHotkeyToggleTime = 0;
+    this._contextMenuHandler = null;
+    this._blockIconMenuHandler = null;
     this.addIcons(ICON_SYMBOLS);
     this.addCommand({
       langKey: "quickLiteralInput",
       langText: "\u5B57\u9762\u6587\u672C\u5FEB\u901F\u8F93\u5165",
       hotkey: "\u21E7\u2318L",
-      callback: () => this._handleQuickInput()
+      callback: () => {
+        this._lastHotkeyToggleTime = Date.now();
+        this._handleQuickInput();
+      }
     });
     this.addCommand({
       langKey: "toggleAutoEscape",
       langText: "\u5207\u6362\u81EA\u52A8\u8F6C\u4E49",
       hotkey: "\u21E7\u2318E",
-      callback: () => this._toggleAutoEscape()
+      callback: () => {
+        this._lastHotkeyToggleTime = Date.now();
+        this._toggleAutoEscape();
+      }
     });
     this.addCommand({
       langKey: "richPaste",
       langText: "\u5BCC\u6587\u672C\u7C98\u8D34",
       hotkey: "\u21E7\u2318V",
-      callback: () => this._triggerRichPaste()
+      callback: () => {
+        this._lastHotkeyToggleTime = Date.now();
+        this._triggerRichPaste();
+      }
     });
     this.addCommand({
       langKey: "selectionToLiteral",
@@ -128,18 +138,14 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       langText: "\u534A\u89D2\u8F6C\u5168\u89D2",
       callback: () => this._convertWidth("toFull")
     });
+    this._registerFallbackHotkeys();
+    this._setupContextMenus();
     this.protyleSlash = [
       {
-        filter: ["\u5B57\u9762\u6587\u672C", "literal", "zmbw"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u5B57\u9762\u6587\u672C\u8F93\u5165</span><span class="b3-list-item__meta">*# \u4E0D\u88AB\u6E32\u67D3</span></div>',
-        id: "literal-input",
+        filter: ["\u5B57\u9762\u6587\u672C", "\u8F6C\u4E49\u6587\u672C", "literal", "escape", "zmbw", "zywb"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u5B57\u9762/\u8F6C\u4E49\u6587\u672C\u8F93\u5165</span><span class="b3-list-item__meta">*# \u4E0D\u88AB\u6E32\u67D3</span></div>',
+        id: "literal-escape-input",
         callback: (protyle) => this._showLiteralDialog("code", protyle)
-      },
-      {
-        filter: ["\u8F6C\u4E49\u6587\u672C", "escape", "zywb"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u8F6C\u4E49\u6587\u672C\u8F93\u5165</span><span class="b3-list-item__meta">\\*\\# \u7EAF\u6587\u672C</span></div>',
-        id: "escape-input",
-        callback: (protyle) => this._showLiteralDialog("escape", protyle)
       },
       {
         filter: ["\u5BCC\u6587\u672C\u7C98\u8D34", "rich paste", "fwbzt"],
@@ -148,16 +154,10 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
         callback: (protyle) => this._triggerRichPaste(protyle)
       },
       {
-        filter: ["\u9009\u533A\u8F6C\u5B57\u9762", "selection literal", "xqzmb"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u9009\u533A\u8F6C\u5B57\u9762\u91CF</span><span class="b3-list-item__meta">\u9009\u4E2D\u6587\u672C\u2192\u884C\u5185\u4EE3\u7801</span></div>',
+        filter: ["\u9009\u533A\u8F6C\u5B57\u9762", "selection literal", "xqzmb", "xqzzy"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u9009\u533A\u8F6C\u5B57\u9762</span><span class="b3-list-item__meta">\u9009\u4E2D\u6587\u672C\u2192\u884C\u5185\u4EE3\u7801/\u8F6C\u4E49</span></div>',
         id: "selection-literal",
-        callback: () => this._selectionToLiteral("code")
-      },
-      {
-        filter: ["\u9009\u533A\u8F6C\u8F6C\u4E49", "selection escape", "xqzzy"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u9009\u533A\u8F6C\u8F6C\u4E49</span><span class="b3-list-item__meta">\u9009\u4E2D\u6587\u672C\u2192\u7EAF\u6587\u672C</span></div>',
-        id: "selection-escape",
-        callback: () => this._selectionToLiteral("escape")
+        callback: () => this._openSelectionModeMenu()
       },
       {
         filter: ["\u5B57\u9762\u5757", "literal block", "zmk"],
@@ -172,16 +172,10 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
         callback: () => this._unescapeSelection()
       },
       {
-        filter: ["\u5168\u89D2\u8F6C\u534A\u89D2", "tohalf", "qjzhb"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u5168\u89D2\u8F6C\u534A\u89D2</span><span class="b3-list-item__meta">\uFF11\uFF0E\uFF15\u21921.5</span></div>',
-        id: "to-half",
-        callback: () => this._convertWidth("toHalf")
-      },
-      {
-        filter: ["\u534A\u89D2\u8F6C\u5168\u89D2", "tofull", "bjzqj"],
-        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u534A\u89D2\u8F6C\u5168\u89D2</span><span class="b3-list-item__meta">1.5\u2192\uFF11\uFF0E\uFF15</span></div>',
-        id: "to-full",
-        callback: () => this._convertWidth("toFull")
+        filter: ["\u5168\u534A\u89D2", "width", "qjzhb", "bjzqj"],
+        html: '<div class="b3-list-item__first"><span class="b3-list-item__text">\u5168\u534A\u89D2\u5207\u6362</span><span class="b3-list-item__meta">\uFF11\uFF0E\uFF15\u21C41.5</span></div>',
+        id: "width-toggle",
+        callback: () => this._openWidthModeMenu()
       }
     ];
     this._buildSettingPanel();
@@ -189,7 +183,6 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     if (this.autoEscapeMode) {
       this._enableAutoEscape();
     }
-    console.log("[\u8F6C\u4E49] \u52A0\u8F7D\u5B8C\u6210\uFF0C\u524D\u7AEF\uFF1A" + (0, import_siyuan.getFrontend)() + "\uFF0C\u81EA\u52A8\u8F6C\u4E49\uFF1A" + (this.autoEscapeMode ? "\u5F00\u542F" : "\u5173\u95ED"));
   }
   onLayoutReady() {
     try {
@@ -213,12 +206,6 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
         position: "right",
         callback: () => this._toggleAutoEscape()
       });
-      this.addTopBar({
-        icon: ICON_CODE_ID,
-        title: "\u9009\u533A\u8F6C\u8F6C\u4E49\uFF08\u9009\u4E2D\u6587\u672C\u2192\u7EAF\u6587\u672C\u5B57\u9762\u91CF\uFF09",
-        position: "right",
-        callback: () => this._selectionToLiteral("escape")
-      });
     } catch (e) {
       console.warn("[\u8F6C\u4E49] \u9876\u680F\u6309\u94AE\u6CE8\u518C\u5931\u8D25\uFF08\u79FB\u52A8\u7AEF\u53EF\u80FD\u4E0D\u652F\u6301\uFF09:", e.message);
     }
@@ -226,12 +213,20 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
   onunload() {
     this._destroyed = true;
     this._removeEscapeListener();
+    this._unregisterFallbackHotkeys();
     if (this.pasteHandler) {
       this.eventBus.off("paste", this.pasteHandler);
       this.pasteHandler = null;
     }
+    if (this._contextMenuHandler) {
+      this.eventBus.off("open-menu-content", this._contextMenuHandler);
+      this._contextMenuHandler = null;
+    }
+    if (this._blockIconMenuHandler) {
+      this.eventBus.off("click-blockicon", this._blockIconMenuHandler);
+      this._blockIconMenuHandler = null;
+    }
     this._escapeTopBarBtn = null;
-    console.log("[\u8F6C\u4E49] \u5DF2\u5378\u8F7D");
   }
   /** 判断事件目标是否在 protyle 编辑器可编辑区域内 */
   _isInProtyle(e) {
@@ -256,13 +251,119 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     this._beforeInputHandler = null;
   }
+  /** 注册 addCommand 热键的兜底监听器（解决 v3.8.0+ 部分环境下热键不触发的问题） */
+  _registerFallbackHotkeys() {
+    this._unregisterFallbackHotkeys();
+    const handler = (e) => {
+      if (this._destroyed) return;
+      const isMod = e.ctrlKey || e.metaKey;
+      const isShift = e.shiftKey;
+      if (!isMod || !isShift) return;
+      const key = e.key.toUpperCase();
+      let action = null;
+      if (key === "E") action = () => this._toggleAutoEscape();
+      else if (key === "L") action = () => this._handleQuickInput();
+      else if (key === "V") action = () => this._triggerRichPaste();
+      else return;
+      const now = Date.now();
+      if (now - this._lastHotkeyToggleTime < 150) return;
+      this._lastHotkeyToggleTime = now;
+      e.preventDefault();
+      e.stopPropagation();
+      action();
+    };
+    this._fallbackKeydownHandler = handler;
+    window.addEventListener("keydown", handler, true);
+  }
+  _unregisterFallbackHotkeys() {
+    const h = this._fallbackKeydownHandler;
+    if (h) {
+      window.removeEventListener("keydown", h, true);
+      this._fallbackKeydownHandler = null;
+    }
+  }
+  /* ---------- 右键/块标菜单 ---------- */
+  _setupContextMenus() {
+    this._contextMenuHandler = (event) => this._onOpenMenuContent(event.detail);
+    this._blockIconMenuHandler = (event) => this._onOpenMenuContent(event.detail);
+    this.eventBus.on("open-menu-content", this._contextMenuHandler);
+    this.eventBus.on("click-blockicon", this._blockIconMenuHandler);
+  }
+  _onOpenMenuContent(detail) {
+    if (!detail?.menu || typeof detail.menu.addItem !== "function") return;
+    const sel = window.getSelection();
+    const hasSelection = sel ? !sel.isCollapsed : false;
+    detail.menu.addItem({
+      label: "\u53CD\u5B57\u9762\uFF08\u8FD8\u539F\u4E3A Markdown\uFF09",
+      disabled: !hasSelection,
+      click: () => {
+        if (hasSelection) this._unescapeSelection();
+      }
+    });
+  }
+  _openSelectionModeMenu() {
+    const menu = new import_siyuan.Menu("literal-selection-mode");
+    menu.addItem({
+      label: "\u8F6C\u6210\u884C\u5185\u4EE3\u7801",
+      click: () => {
+        menu.close();
+        this._selectionToLiteral("code");
+      }
+    });
+    menu.addItem({
+      label: "\u8F6C\u6210\u53CD\u659C\u6760\u8F6C\u4E49",
+      click: () => {
+        menu.close();
+        this._selectionToLiteral("escape");
+      }
+    });
+    const rect = this._getSelectionRect();
+    menu.open({ x: rect.left, y: rect.bottom, h: rect.height });
+  }
+  _openWidthModeMenu() {
+    const menu = new import_siyuan.Menu("literal-width-mode");
+    menu.addItem({
+      label: "\u5168\u89D2\u8F6C\u534A\u89D2",
+      click: () => {
+        menu.close();
+        this._convertWidth("toHalf");
+      }
+    });
+    menu.addItem({
+      label: "\u534A\u89D2\u8F6C\u5168\u89D2",
+      click: () => {
+        menu.close();
+        this._convertWidth("toFull");
+      }
+    });
+    const rect = this._getSelectionRect();
+    menu.open({ x: rect.left, y: rect.bottom, h: rect.height });
+  }
+  _getSelectionRect() {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (rect.width > 0 || rect.height > 0) return rect;
+    }
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    return {
+      left: cx,
+      top: cy,
+      bottom: cy,
+      right: cx,
+      x: cx,
+      y: cy,
+      width: 0,
+      height: 0
+    };
+  }
   /* ---------- 配置持久化 ---------- */
   async _saveConfig() {
     this.config.autoEscape = this.autoEscapeMode;
     this.config.richPaste = this.richPasteEnabled;
     this.config.escapeChars = this.escapeChars;
     this.config.assetSubdir = this.assetSubdir;
-    console.log("[\u8F6C\u4E49] \u4FDD\u5B58\u914D\u7F6E:", JSON.stringify(this.config));
     try {
       await this.saveData(STORAGE_KEY, this.config);
       return true;
@@ -446,7 +547,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
   _escapeText(text) {
     return text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/([{}[\]()+.\-!~|><])/g, "\\$&").replace(/\*/g, SAFE_ASTERISK).replace(/#/g, SAFE_HASH);
   }
-  /** 按字符返回其"安全替换"形式：*→\*，#→`#`（行内代码包裹），其它→\X 反斜杠前缀 */
+  /** 按字符返回其"安全替换"形式：*→\*，#→\#（反斜杠转义），其它→\X 反斜杠前缀 */
   _safeCharFor(ch) {
     if (ch === "*") return SAFE_ASTERISK;
     if (ch === "#") return SAFE_HASH;
@@ -571,7 +672,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     this._updateEscapeButton();
     if (this.autoEscapeMode) {
       this._enableAutoEscape();
-      (0, import_siyuan.showMessage)("\u81EA\u52A8\u8F6C\u4E49\u5DF2\u5F00\u542F\uFF1A*\u2192\\*  #\u2192`#`", 2500, "info");
+      (0, import_siyuan.showMessage)("\u81EA\u52A8\u8F6C\u4E49\u5DF2\u5F00\u542F\uFF1A*\u2192*  #\u2192#", 2500, "info");
     } else {
       this._disableAutoEscape();
       (0, import_siyuan.showMessage)("\u81EA\u52A8\u8F6C\u4E49\u5DF2\u5173\u95ED", 2e3, "info");
@@ -866,7 +967,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     });
     this.setting.addItem({
       title: "\u81EA\u52A8\u8F6C\u4E49",
-      description: "\u5F00\u542F\u540E\u8F93\u5165 * # _ \u7B49\u4F1A\u88AB\u81EA\u52A8\u4FDD\u62A4\uFF08* -> *\uFF0C# -> \u884C\u5185\u4EE3\u7801\uFF09\u3002\u4EE3\u7801\u5757\u5185\u4E0D\u53D7\u5F71\u54CD\u3002",
+      description: "\u5F00\u542F\u540E\u8F93\u5165 * # _ \u7B49\u4F1A\u88AB\u81EA\u52A8\u4FDD\u62A4\uFF08* -> *\uFF0C# -> #\uFF09\u3002\u4EE3\u7801\u5757\u5185\u4E0D\u53D7\u5F71\u54CD\u3002",
       createActionElement: () => {
         const el = document.createElement("input");
         el.type = "checkbox";
@@ -885,7 +986,7 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     });
     this.setting.addItem({
       title: "\u81EA\u52A8\u8F6C\u4E49\u7684\u5B57\u7B26",
-      description: "\u9ED8\u8BA4 * \u548C #\u3002# \u7528\u884C\u5185\u4EE3\u7801\u5305\u88F9\uFF0C\u5176\u5B83\u7528\u53CD\u659C\u6760\u524D\u7F00\u3002",
+      description: "\u9ED8\u8BA4 * \u548C #\u3002# \u7528\u53CD\u659C\u6760\u8F6C\u4E49\uFF08\\#\uFF09\uFF0C\u4E0E * \u884C\u4E3A\u4E00\u81F4\uFF1B\u5176\u5B83\u7528\u53CD\u659C\u6760\u524D\u7F00\u3002",
       createActionElement: () => {
         const wrap = document.createElement("div");
         wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px 12px;";
