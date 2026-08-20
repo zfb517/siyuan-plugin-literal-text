@@ -373,17 +373,23 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
       return false;
     }
   }
-  /** 更新顶栏转义按钮状态（切换 Symbol 引用） */
+  /** 更新顶栏转义按钮状态（同步 tooltip 的 aria-label） */
   _updateEscapeButton() {
     if (!this._escapeTopBarBtn) return;
     try {
+      const title = this.autoEscapeMode ? "\u81EA\u52A8\u8F6C\u4E49\uFF1A\u5DF2\u5F00\u542F\uFF08\u70B9\u51FB\u6216 Ctrl+Shift+E \u5173\u95ED\uFF09" : "\u81EA\u52A8\u8F6C\u4E49\uFF1A\u5DF2\u5173\u95ED\uFF08\u70B9\u51FB\u6216 Ctrl+Shift+E \u5F00\u542F\uFF09";
+      this._escapeTopBarBtn.title = title;
+      this._escapeTopBarBtn.setAttribute("aria-label", title);
+      const menuLabel = this._escapeTopBarBtn.querySelector(".b3-menu__label");
+      if (menuLabel) {
+        menuLabel.textContent = title;
+      }
       const svg = this._escapeTopBarBtn.querySelector("svg");
       const use = this._escapeTopBarBtn.querySelector("use");
       if (use && svg) {
         const newId = this.autoEscapeMode ? ICON_ESCAPE_ON_ID : ICON_ESCAPE_OFF_ID;
         use.setAttribute("href", "#" + newId);
         svg.style.color = this.autoEscapeMode ? "var(--b3-theme-primary)" : "var(--b3-empty-color)";
-        this._escapeTopBarBtn.title = this.autoEscapeMode ? "\u81EA\u52A8\u8F6C\u4E49\uFF1A\u5DF2\u5F00\u542F\uFF08\u70B9\u51FB\u5173\u95ED\uFF09" : "\u81EA\u52A8\u8F6C\u4E49\uFF1A\u5DF2\u5173\u95ED\uFF08\u70B9\u51FB\u5F00\u542F\uFF09";
       }
     } catch (e) {
     }

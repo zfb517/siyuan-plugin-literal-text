@@ -456,10 +456,22 @@ export default class LiteralTextPlugin extends Plugin {
     }
   }
 
-  /** 更新顶栏转义按钮状态（切换 Symbol 引用） */
+  /** 更新顶栏转义按钮状态（同步 tooltip 的 aria-label） */
   _updateEscapeButton() {
     if (!this._escapeTopBarBtn) return;
     try {
+      const title = this.autoEscapeMode
+        ? "自动转义：已开启（点击或 Ctrl+Shift+E 关闭）"
+        : "自动转义：已关闭（点击或 Ctrl+Shift+E 开启）";
+      // 同步 .title（兜底）和 aria-label（思源桌面端 tooltip 实际读取的属性）
+      this._escapeTopBarBtn.title = title;
+      this._escapeTopBarBtn.setAttribute("aria-label", title);
+      // 移动端：同步 b3-menu__label 文本
+      const menuLabel = this._escapeTopBarBtn.querySelector(".b3-menu__label");
+      if (menuLabel) {
+        menuLabel.textContent = title;
+      }
+
       const svg = this._escapeTopBarBtn.querySelector("svg");
       const use = this._escapeTopBarBtn.querySelector("use");
       if (use && svg) {
@@ -468,9 +480,6 @@ export default class LiteralTextPlugin extends Plugin {
         svg.style.color = this.autoEscapeMode
           ? "var(--b3-theme-primary)"
           : "var(--b3-empty-color)";
-        this._escapeTopBarBtn.title = this.autoEscapeMode
-          ? "自动转义：已开启（点击关闭）"
-          : "自动转义：已关闭（点击开启）";
       }
     } catch (e: any) { /* 静默 */ }
   }
