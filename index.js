@@ -53,6 +53,104 @@ function _getEscSlot() {
 function _setEscSlot(h) {
   document[ESC_SLOT] = h;
 }
+var DEFAULT_HOTKEYS = {
+  quickLiteralInput: "\u21E7\u2318L",
+  toggleAutoEscape: "\u21E7\u2318E",
+  richPaste: "\u21E7\u2318V"
+};
+var _isMac = () => navigator.platform.toUpperCase().indexOf("MAC") > -1;
+var _isNotCtrl = (event) => !event.metaKey && !event.ctrlKey;
+var _isOnlyMeta = (event) => _isMac() ? event.metaKey && !event.ctrlKey : !event.metaKey && event.ctrlKey;
+var KEYCODELIST = (() => {
+  const m = {};
+  for (let i = 1; i <= 32; i++) m[i + 111] = "F" + i;
+  const entries = [
+    [8, "\u232B"],
+    [9, "\u21E5"],
+    [13, "\u21A9"],
+    [16, "\u21E7"],
+    [17, "\u2303"],
+    [18, "\u2325"],
+    [19, "Pause"],
+    [20, "CapsLock"],
+    [27, "Escape"],
+    [32, " "],
+    [33, "PageUp"],
+    [34, "PageDown"],
+    [35, "End"],
+    [36, "Home"],
+    [37, "\u2190"],
+    [38, "\u2191"],
+    [39, "\u2192"],
+    [40, "\u2193"],
+    [44, "PrintScreen"],
+    [45, "Insert"],
+    [46, "\u2326"]
+  ];
+  for (let i = 0; i < 10; i++) entries.push([48 + i, String(i)]);
+  for (let c = 65; c <= 90; c++) entries.push([c, String.fromCharCode(c)]);
+  entries.push([91, "\u2318"], [92, "\u2318"], [93, "ContextMenu"]);
+  for (let i = 0; i < 10; i++) entries.push([96 + i, String(i)]);
+  entries.push([106, "*"], [107, "+"], [109, "-"], [110, "."], [111, "/"]);
+  entries.push([144, "NumLock"], [145, "ScrollLock"], [182, "MyComputer"], [183, "MyCalculator"]);
+  entries.push([186, ";"], [187, "="], [188, ","], [189, "-"], [190, "."], [191, "/"], [192, "`"]);
+  entries.push([219, "["], [220, "\\"], [221, "]"], [222, "'"]);
+  for (const [k, v] of entries) m[k] = v;
+  return m;
+})();
+var _normalizeShortcutKey = (key, mac) => {
+  if (mac || !key.startsWith("\u2303")) return key;
+  if (key === "\u2303D") return "";
+  return key.replace("\u2318", "").replace("\u2303", "\u2318").replace("\u2318\u21E7", "\u21E7\u2318").replace("\u2318\u2325\u21E7", "\u21E5\u2318").replace("\u2318\u2325", "\u2325\u2318");
+};
+var _matchHotKey = (hotKey, event) => {
+  if (!hotKey) return false;
+  hotKey = _normalizeShortcutKey(hotKey, _isMac());
+  if (!hotKey) return false;
+  if (hotKey.indexOf("\u21E7") === -1 && hotKey.indexOf("\u2318") === -1 && hotKey.indexOf("\u2325") === -1 && hotKey.indexOf("\u2303") === -1) {
+    if (_isNotCtrl(event) && !event.altKey && !event.shiftKey && hotKey === KEYCODELIST[event.keyCode]) return true;
+    return false;
+  }
+  const hotKeys = [];
+  let idx = 0;
+  while (idx < hotKey.length && "\u2303\u2325\u21E7\u2318".includes(hotKey[idx])) {
+    hotKeys.push(hotKey[idx]);
+    idx++;
+  }
+  const mainKey = hotKey.slice(idx);
+  if (mainKey) hotKeys.push(mainKey);
+  if (hotKey.startsWith("\u21E7") && hotKeys.length === 2) {
+    if (_isNotCtrl(event) && !event.altKey && event.shiftKey && hotKeys[1] === KEYCODELIST[event.keyCode]) return true;
+    return false;
+  }
+  if (hotKey.startsWith("\u2325")) {
+    let keyCode = hotKeys.length === 3 ? hotKeys[2] : hotKeys[1];
+    if (hotKeys.length === 4) keyCode = hotKeys[3];
+    const isMatchKey = keyCode === KEYCODELIST[event.keyCode];
+    if (isMatchKey && event.altKey && !event.shiftKey && hotKeys.length < 4 && (hotKeys.length === 3 ? _isOnlyMeta(event) && hotKey.startsWith("\u2325\u2318") : _isNotCtrl(event))) return true;
+    if (isMatchKey && hotKey.startsWith("\u2325\u21E7\u2318") && hotKeys.length === 4 && event.altKey && event.shiftKey && _isOnlyMeta(event)) return true;
+    if (isMatchKey && hotKey.startsWith("\u2325\u21E7") && hotKeys.length === 3 && event.altKey && event.shiftKey && _isNotCtrl(event)) return true;
+    return false;
+  }
+  if (hotKey.startsWith("\u2303")) {
+    if (!_isMac()) return false;
+    let keyCode = hotKeys.length === 3 ? hotKeys[2] : hotKeys[1];
+    if (hotKeys.length === 4) keyCode = hotKeys[3];
+    else if (hotKeys.length === 5) keyCode = hotKeys[4];
+    const isMatchKey = keyCode === KEYCODELIST[event.keyCode];
+    if (isMatchKey && event.ctrlKey && !event.altKey && !event.shiftKey && hotKeys.length < 4 && (hotKeys.length === 3 ? event.metaKey && hotKey.startsWith("\u2303\u2318") : !event.metaKey)) return true;
+    if (isMatchKey && hotKey.startsWith("\u2303\u21E7") && hotKeys.length === 3 && event.ctrlKey && !event.altKey && event.shiftKey && !event.metaKey) return true;
+    if (isMatchKey && hotKey.startsWith("\u2303\u2325") && hotKeys.length === 3 && event.ctrlKey && event.altKey && !event.shiftKey && !event.metaKey) return true;
+    if (isMatchKey && hotKeys.length === 4 && event.ctrlKey && (hotKey.startsWith("\u2303\u2325\u21E7") && event.shiftKey && !event.metaKey && event.altKey || hotKey.startsWith("\u2303\u2325\u2318") && !event.shiftKey && event.metaKey && event.altKey || hotKey.startsWith("\u2303\u21E7\u2318") && event.shiftKey && event.metaKey && !event.altKey)) return true;
+    if (isMatchKey && hotKeys.length === 5 && event.ctrlKey && event.shiftKey && event.metaKey && event.altKey) return true;
+    return false;
+  }
+  const hasShift = hotKeys.length > 2 && hotKeys[0] === "\u21E7";
+  if (_isOnlyMeta(event) && !event.altKey && (!hasShift && !event.shiftKey || hasShift && event.shiftKey)) {
+    return (hasShift ? hotKeys[2] : hotKeys[1]) === KEYCODELIST[event.keyCode];
+  }
+  return false;
+};
 var _isMobile = () => {
   const f = (0, import_siyuan.getFrontend)();
   return f === "mobile" || f === "browser-mobile";
@@ -251,26 +349,75 @@ var LiteralTextPlugin = class extends import_siyuan.Plugin {
     }
     this._beforeInputHandler = null;
   }
-  /** 注册 addCommand 热键的兜底监听器（解决 v3.8.0+ 部分环境下热键不触发的问题） */
+  /**
+   * 读取某命令在「设置→快捷键」中的 keymap 项，兼容插件名带/不带 siyuan-plugin- 前缀。
+   * 返回结构形如 { default, custom, bindings? }，找不到返回 undefined。
+   */
+  _getKeymapItem(langKey) {
+    const pluginKm = window.siyuan?.config?.keymap?.plugin;
+    if (!pluginKm || typeof pluginKm !== "object") return void 0;
+    const candidates = [
+      this.name,
+      "siyuan-plugin-" + this.name,
+      this.name.replace(/^siyuan-plugin-/, "")
+    ];
+    for (const key of candidates) {
+      const item = pluginKm[key] && pluginKm[key][langKey];
+      if (item && typeof item.custom === "string") return item;
+    }
+    for (const pk of Object.keys(pluginKm)) {
+      const item = pluginKm[pk] && pluginKm[pk][langKey];
+      if (item && typeof item.custom === "string") return item;
+    }
+    return void 0;
+  }
+  /**
+   * 返回某命令当前生效的快捷键字符串数组（忠实复刻 keymapBindings.getKeymapBindings）：
+   * - item 完全缺失（配置未就绪）→ 回退默认热键
+   * - 有 bindings(version===1, keys 数组) → 去重后的 keys
+   * - 无 bindings 且 custom 非空 → [custom]
+   * - custom 为空串 → []（用户已清空绑定，视为未绑定，兜底不应触发）
+   */
+  _getEffectiveHotkeys(langKey) {
+    const item = this._getKeymapItem(langKey);
+    if (!item) return DEFAULT_HOTKEYS[langKey] ? [DEFAULT_HOTKEYS[langKey]] : [];
+    if (item.bindings) {
+      if (item.bindings.version !== 1 || !Array.isArray(item.bindings.keys)) return [];
+      return [...new Set(item.bindings.keys.filter((k) => typeof k === "string" && k.length > 0))];
+    }
+    return typeof item.custom === "string" && item.custom ? [item.custom] : [];
+  }
+  /**
+   * 注册 addCommand 热键的兜底监听器（解决 v3.8.0+ 部分环境下热键不触发的问题）。
+   * 关键修复（集市 issue #1）：兜底不再硬编码 ⇧⌘E/L/V，而是实时读取用户当前生效绑定
+   * （_getEffectiveHotkeys，忠实复刻思源 getKeymapBindings / matchHotKey），
+   * 仅当用户实际绑定（或配置缺失时回退默认）被按下才触发，
+   * 从而尊重用户在「设置→快捷键」的改绑/删除，不再覆盖用户配置。
+   */
   _registerFallbackHotkeys() {
     this._unregisterFallbackHotkeys();
     const handler = (e) => {
       if (this._destroyed) return;
-      const isMod = e.ctrlKey || e.metaKey;
-      const isShift = e.shiftKey;
-      if (!isMod || !isShift) return;
-      const key = e.key.toUpperCase();
-      let action = null;
-      if (key === "E") action = () => this._toggleAutoEscape();
-      else if (key === "L") action = () => this._handleQuickInput();
-      else if (key === "V") action = () => this._triggerRichPaste();
-      else return;
+      const commands = [
+        { langKey: "quickLiteralInput", action: () => this._handleQuickInput() },
+        { langKey: "toggleAutoEscape", action: () => this._toggleAutoEscape() },
+        { langKey: "richPaste", action: () => this._triggerRichPaste() }
+      ];
+      let matched = null;
+      for (const cmd of commands) {
+        const hotkeys = this._getEffectiveHotkeys(cmd.langKey);
+        if (hotkeys.some((hk) => _matchHotKey(hk, e))) {
+          matched = cmd.action;
+          break;
+        }
+      }
+      if (!matched) return;
       const now = Date.now();
       if (now - this._lastHotkeyToggleTime < 150) return;
       this._lastHotkeyToggleTime = now;
       e.preventDefault();
       e.stopPropagation();
-      action();
+      matched();
     };
     this._fallbackKeydownHandler = handler;
     window.addEventListener("keydown", handler, true);

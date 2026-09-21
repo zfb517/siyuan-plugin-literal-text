@@ -1,5 +1,11 @@
 /**
- * 思源笔记插件 - 转义 v2.8.11
+ * 思源笔记插件 - 转义 v2.8.14
+ *
+ * v2.8.14 变更：
+ *   - 修复集市 issue #1（macOS 上 Cmd+Shift+L 无法关闭/被兜底监听覆盖）：兜底 keydown
+ *     监听器不再硬编码 ⇧⌘E/L/V，而是实时读取用户在「设置→快捷键」中的生效绑定
+ *     （忠实复刻思源 getKeymapBindings / matchHotKey 语义），仅当用户实际绑定被按下才触发，
+ *     尊重用户的改绑/删除；用户清空某命令绑定时兜底不再触发该命令。
  *
  * v2.8.11 变更：
  *   - 精简顶部栏：移除「选区转转义」独立按钮，仅保留 字面文本 / 富粘贴 / 自动转义 三个按钮。
@@ -9,11 +15,11 @@
  *     还原为 Markdown。
  *   - 将 # 的安全替换从行内代码包裹统一为反斜杠 \#，与 * 的 \* 行为完全一致。
  *   - 修复 v3.8.0+ 下 Ctrl+Shift+E/L/V 快捷键可能失效的问题：保留 addCommand 注册并增加
- *     window 级兜底监听器。
+ *     window 级兜底监听器（该监听器在 v2.8.14 起改为读取用户键位配置）。
  *   - 清理非必要调试日志。
  *
  * 功能入口：
- *   Ctrl+Shift+L  字面文本输入弹窗
+ *   Ctrl+Shift+L  字面文本输入弹窗（可在「设置→快捷键」改绑/删除）
  *   Ctrl+Shift+E  自动转义开关
  *   Ctrl+Shift+V  富文本粘贴（自动下载图片）
  *   /字面          斜杠命令
@@ -75,6 +81,123 @@ function _getEscSlot(): ((e: any) => void) | null {
 function _setEscSlot(h: ((e: any) => void) | null) {
   (document as any)[ESC_SLOT] = h;
 }
+
+/**
+ * 兜底快捷键匹配：忠实移植思源内核 app/src/protyle/util/hotKey.ts 的 matchHotKey
+ * 与 app/src/util/keymapBindings.ts 的 getKeymapBindings / normalizeShortcutKey，
+ * 以及 compatibility.ts 的 isMac/isNotCtrl/isOnlyMeta、constants.ts 的 KEYCODELIST。
+ * 目的：让 window 级兜底监听器与思源自家 dispatchPluginShortcut 用同一套匹配语义，
+ * 从而尊重用户在「设置→快捷键」里对插件命令的改绑/删除（集市 issue #1 根因修复）。
+ */
+const DEFAULT_HOTKEYS: Record<string, string> = {
+  quickLiteralInput: "⇧⌘L",
+  toggleAutoEscape: "⇧⌘E",
+  richPaste: "⇧⌘V",
+};
+
+// 平台判断（与思源 compatibility.ts 一致）
+const _isMac = (): boolean => navigator.platform.toUpperCase().indexOf("MAC") > -1;
+const _isNotCtrl = (event: KeyboardEvent): boolean => !event.metaKey && !event.ctrlKey;
+const _isOnlyMeta = (event: KeyboardEvent): boolean =>
+  _isMac() ? (event.metaKey && !event.ctrlKey) : (!event.metaKey && event.ctrlKey);
+
+// 键码 → 字符映射（与思源 constants.ts KEYCODELIST 一致）
+const KEYCODELIST: { [key: number]: string } = (() => {
+  const m: { [key: number]: string } = {};
+  for (let i = 1; i <= 32; i++) m[i + 111] = "F" + i; // F1..F32
+  const entries: Array<[number, string]> = [
+    [8, "⌫"], [9, "⇥"], [13, "↩"], [16, "⇧"], [17, "⌃"], [18, "⌥"], [19, "Pause"],
+    [20, "CapsLock"], [27, "Escape"], [32, " "], [33, "PageUp"], [34, "PageDown"],
+    [35, "End"], [36, "Home"], [37, "←"], [38, "↑"], [39, "→"], [40, "↓"],
+    [44, "PrintScreen"], [45, "Insert"], [46, "⌦"],
+  ];
+  for (let i = 0; i < 10; i++) entries.push([48 + i, String(i)]);        // 0-9
+  for (let c = 65; c <= 90; c++) entries.push([c, String.fromCharCode(c)]); // A-Z
+  entries.push([91, "⌘"], [92, "⌘"], [93, "ContextMenu"]);
+  for (let i = 0; i < 10; i++) entries.push([96 + i, String(i)]);        // 小键盘 0-9
+  entries.push([106, "*"], [107, "+"], [109, "-"], [110, "."], [111, "/"]);
+  entries.push([144, "NumLock"], [145, "ScrollLock"], [182, "MyComputer"], [183, "MyCalculator"]);
+  entries.push([186, ";"], [187, "="], [188, ","], [189, "-"], [190, "."], [191, "/"], [192, "`"]);
+  entries.push([219, "["], [220, "\\"], [221, "]"], [222, "'"]);
+  for (const [k, v] of entries) m[k] = v;
+  return m;
+})();
+
+// 与 keymapBindings.ts 一致：非 mac 且以 ⌃ 开头时归一化（⌃ 在非 mac 不被支持）
+const _normalizeShortcutKey = (key: string, mac: boolean): string => {
+  if (mac || !key.startsWith("⌃")) return key;
+  if (key === "⌃D") return "";
+  return key.replace("⌘", "").replace("⌃", "⌘")
+    .replace("⌘⇧", "⇧⌘").replace("⌘⌥⇧", "⇥⌘").replace("⌘⌥", "⌥⌘");
+};
+
+// 忠实移植 matchHotKey（app/src/protyle/util/hotKey.ts）
+const _matchHotKey = (hotKey: string, event: KeyboardEvent): boolean => {
+  if (!hotKey) return false;
+  hotKey = _normalizeShortcutKey(hotKey, _isMac());
+  if (!hotKey) return false;
+
+  if (hotKey.indexOf("⇧") === -1 && hotKey.indexOf("⌘") === -1 &&
+      hotKey.indexOf("⌥") === -1 && hotKey.indexOf("⌃") === -1) {
+    if (_isNotCtrl(event) && !event.altKey && !event.shiftKey && hotKey === KEYCODELIST[event.keyCode]) return true;
+    return false;
+  }
+
+  const hotKeys: string[] = [];
+  let idx = 0;
+  while (idx < hotKey.length && "⌃⌥⇧⌘".includes(hotKey[idx])) {
+    hotKeys.push(hotKey[idx]);
+    idx++;
+  }
+  const mainKey = hotKey.slice(idx);
+  if (mainKey) hotKeys.push(mainKey);
+
+  if (hotKey.startsWith("⇧") && hotKeys.length === 2) {
+    if (_isNotCtrl(event) && !event.altKey && event.shiftKey && hotKeys[1] === KEYCODELIST[event.keyCode]) return true;
+    return false;
+  }
+
+  if (hotKey.startsWith("⌥")) {
+    let keyCode = hotKeys.length === 3 ? hotKeys[2] : hotKeys[1];
+    if (hotKeys.length === 4) keyCode = hotKeys[3];
+    const isMatchKey = keyCode === KEYCODELIST[event.keyCode];
+    if (isMatchKey && event.altKey && !event.shiftKey && hotKeys.length < 4 &&
+        (hotKeys.length === 3 ? (_isOnlyMeta(event) && hotKey.startsWith("⌥⌘")) : _isNotCtrl(event))) return true;
+    if (isMatchKey && hotKey.startsWith("⌥⇧⌘") && hotKeys.length === 4 &&
+        event.altKey && event.shiftKey && _isOnlyMeta(event)) return true;
+    if (isMatchKey && hotKey.startsWith("⌥⇧") && hotKeys.length === 3 &&
+        event.altKey && event.shiftKey && _isNotCtrl(event)) return true;
+    return false;
+  }
+
+  if (hotKey.startsWith("⌃")) {
+    if (!_isMac()) return false;
+    let keyCode = hotKeys.length === 3 ? hotKeys[2] : hotKeys[1];
+    if (hotKeys.length === 4) keyCode = hotKeys[3];
+    else if (hotKeys.length === 5) keyCode = hotKeys[4];
+    const isMatchKey = keyCode === KEYCODELIST[event.keyCode];
+    if (isMatchKey && event.ctrlKey && !event.altKey && !event.shiftKey && hotKeys.length < 4 &&
+        (hotKeys.length === 3 ? (event.metaKey && hotKey.startsWith("⌃⌘")) : !event.metaKey)) return true;
+    if (isMatchKey && hotKey.startsWith("⌃⇧") && hotKeys.length === 3 &&
+        event.ctrlKey && !event.altKey && event.shiftKey && !event.metaKey) return true;
+    if (isMatchKey && hotKey.startsWith("⌃⌥") && hotKeys.length === 3 &&
+        event.ctrlKey && event.altKey && !event.shiftKey && !event.metaKey) return true;
+    if (isMatchKey && hotKeys.length === 4 && event.ctrlKey &&
+        ((hotKey.startsWith("⌃⌥⇧") && event.shiftKey && !event.metaKey && event.altKey) ||
+         (hotKey.startsWith("⌃⌥⌘") && !event.shiftKey && event.metaKey && event.altKey) ||
+         (hotKey.startsWith("⌃⇧⌘") && event.shiftKey && event.metaKey && !event.altKey))) return true;
+    if (isMatchKey && hotKeys.length === 5 && event.ctrlKey && event.shiftKey && event.metaKey && event.altKey) return true;
+    return false;
+  }
+
+  // ⇧⌘[] / ⌘[]
+  const hasShift = hotKeys.length > 2 && hotKeys[0] === "⇧";
+  if (_isOnlyMeta(event) && !event.altKey &&
+      ((!hasShift && !event.shiftKey) || (hasShift && event.shiftKey))) {
+    return (hasShift ? hotKeys[2] : hotKeys[1]) === KEYCODELIST[event.keyCode];
+  }
+  return false;
+};
 
 // 辅助函数
 const _isMobile = () => {
@@ -199,8 +322,9 @@ export default class LiteralTextPlugin extends Plugin {
       callback: () => this._convertWidth("toFull"),
     });
 
-    // 兜底：部分环境（v3.8.0+ / 快捷键冲突 / 用户自定义覆盖）下 addCommand 可能不触发，
-    // 额外在 window 监听 Ctrl/Cmd+Shift+E/L/V，用防抖避免与 addCommand 重复执行。
+    // 兜底：部分环境（v3.8.0+ / 快捷键冲突）下 addCommand 可能不触发，额外在 window 捕获阶段
+    // 监听。该监听器会实时读取用户在「设置→快捷键」的生效绑定（v2.8.14 起），仅当用户实际
+    // 绑定被按下才触发，尊重改绑/删除；用 150ms 防抖避免与 addCommand 重复执行。
     this._registerFallbackHotkeys();
 
     /* --- 1.5 右键/块标菜单入口 --- */
@@ -340,21 +464,74 @@ export default class LiteralTextPlugin extends Plugin {
     this._beforeInputHandler = null;
   }
 
-  /** 注册 addCommand 热键的兜底监听器（解决 v3.8.0+ 部分环境下热键不触发的问题） */
+  /**
+   * 读取某命令在「设置→快捷键」中的 keymap 项，兼容插件名带/不带 siyuan-plugin- 前缀。
+   * 返回结构形如 { default, custom, bindings? }，找不到返回 undefined。
+   */
+  _getKeymapItem(langKey: string): any {
+    const pluginKm = (window as any).siyuan?.config?.keymap?.plugin;
+    if (!pluginKm || typeof pluginKm !== "object") return undefined;
+    const candidates = [
+      this.name,
+      "siyuan-plugin-" + this.name,
+      this.name.replace(/^siyuan-plugin-/, ""),
+    ];
+    for (const key of candidates) {
+      const item = pluginKm[key] && pluginKm[key][langKey];
+      if (item && typeof item.custom === "string") return item;
+    }
+    // 兜底：扫描所有插件条目按 langKey 唯一匹配（防御插件名前缀不一致）
+    for (const pk of Object.keys(pluginKm)) {
+      const item = pluginKm[pk] && pluginKm[pk][langKey];
+      if (item && typeof item.custom === "string") return item;
+    }
+    return undefined;
+  }
+
+  /**
+   * 返回某命令当前生效的快捷键字符串数组（忠实复刻 keymapBindings.getKeymapBindings）：
+   * - item 完全缺失（配置未就绪）→ 回退默认热键
+   * - 有 bindings(version===1, keys 数组) → 去重后的 keys
+   * - 无 bindings 且 custom 非空 → [custom]
+   * - custom 为空串 → []（用户已清空绑定，视为未绑定，兜底不应触发）
+   */
+  _getEffectiveHotkeys(langKey: string): string[] {
+    const item = this._getKeymapItem(langKey);
+    if (!item) return DEFAULT_HOTKEYS[langKey] ? [DEFAULT_HOTKEYS[langKey]] : [];
+    if (item.bindings) {
+      if (item.bindings.version !== 1 || !Array.isArray(item.bindings.keys)) return [];
+      return [...new Set((item.bindings.keys as any[]).filter((k: any) => typeof k === "string" && k.length > 0))] as string[];
+    }
+    return typeof item.custom === "string" && item.custom ? [item.custom] : [];
+  }
+
+  /**
+   * 注册 addCommand 热键的兜底监听器（解决 v3.8.0+ 部分环境下热键不触发的问题）。
+   * 关键修复（集市 issue #1）：兜底不再硬编码 ⇧⌘E/L/V，而是实时读取用户当前生效绑定
+   * （_getEffectiveHotkeys，忠实复刻思源 getKeymapBindings / matchHotKey），
+   * 仅当用户实际绑定（或配置缺失时回退默认）被按下才触发，
+   * 从而尊重用户在「设置→快捷键」的改绑/删除，不再覆盖用户配置。
+   */
   _registerFallbackHotkeys() {
     this._unregisterFallbackHotkeys();
     const handler = (e: KeyboardEvent) => {
       if (this._destroyed) return;
-      const isMod = e.ctrlKey || e.metaKey;
-      const isShift = e.shiftKey;
-      if (!isMod || !isShift) return;
 
-      const key = e.key.toUpperCase();
-      let action: (() => void) | null = null;
-      if (key === "E") action = () => this._toggleAutoEscape();
-      else if (key === "L") action = () => this._handleQuickInput();
-      else if (key === "V") action = () => this._triggerRichPaste();
-      else return;
+      const commands: Array<{ langKey: string; action: () => void }> = [
+        { langKey: "quickLiteralInput", action: () => this._handleQuickInput() },
+        { langKey: "toggleAutoEscape", action: () => this._toggleAutoEscape() },
+        { langKey: "richPaste", action: () => this._triggerRichPaste() },
+      ];
+
+      let matched: (() => void) | null = null;
+      for (const cmd of commands) {
+        const hotkeys = this._getEffectiveHotkeys(cmd.langKey);
+        if (hotkeys.some((hk) => _matchHotKey(hk, e))) {
+          matched = cmd.action;
+          break;
+        }
+      }
+      if (!matched) return;
 
       // 防抖：若 addCommand 已触发同一动作，忽略 150ms 内的重复调用
       const now = Date.now();
@@ -363,7 +540,7 @@ export default class LiteralTextPlugin extends Plugin {
 
       e.preventDefault();
       e.stopPropagation();
-      action();
+      matched();
     };
     this._fallbackKeydownHandler = handler;
     window.addEventListener("keydown", handler, true);
