@@ -1,5 +1,12 @@
 /**
- * 思源笔记插件 - 转义 v2.8.14
+ * 思源笔记插件 - 转义 v2.8.15
+ *
+ * v2.8.15 变更：
+ *   - 兼容性版本标记（无功能变更）：适配思源笔记 v3.8.7。经源码级核验，v3.8.7 的
+ *     `/api/ai/` 路由集与 v3.8.6 一致（唯一新增 `agent/lsBuiltinSkills` 为技能列举端点，
+ *     非 token 消耗端点），7 个 token 消耗端点均未变动；keymapBindings.ts / hotKey.ts /
+ *     KEYCODELIST 键位语义未变（hotKey.ts 仅新增 iOS 中文输入法兜底，非 iOS 平台逐字等价），
+ *     literal-text 读取 `window.siyuan.config.keymap.plugin` 的链路不受影响。无需代码改动。
  *
  * v2.8.14 变更：
  *   - 修复集市 issue #1（macOS 上 Cmd+Shift+L 无法关闭/被兜底监听覆盖）：兜底 keydown

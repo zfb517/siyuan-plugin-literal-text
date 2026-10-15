@@ -2,6 +2,7 @@
 
 | 版本    | 日期         | 变更                                                                   |
 | ----- | ---------- | -------------------------------------------------------------------- |
+| 2.8.15 | 2026-10-15 | 兼容性版本标记（无功能变更）：适配思源笔记 v3.8.7。经源码级核验，`/api/ai/` 路由集与 v3.8.6 一致（唯一新增 `agent/lsBuiltinSkills` 为技能列举端点、非 token 消耗端点），7 个 token 消耗端点均未变动；keymapBindings.ts / hotKey.ts / KEYCODELIST 键位语义未变（hotKey.ts 仅新增 iOS 中文输入法兜底，非 iOS 平台逐字等价），读取「设置→快捷键」生效绑定的逻辑不受影响。无需代码改动 |
 | 2.8.14 | 2026-09-22 | 修复集市 issue #1（macOS 上 Cmd+Shift+L 无法关闭/被兜底监听覆盖）：兜底 keydown 监听器不再硬编码 ⇧⌘E/L/V，改为实时读取用户在「设置→快捷键」的生效绑定（忠实复刻思源 getKeymapBindings / matchHotKey 语义），仅当用户实际绑定被按下才触发，尊重改绑/删除；用户清空某命令绑定后该命令兜底不再触发 |
 | 2.8.13 | 2026-09-21 | 兼容性版本标记（无功能变更）：适配思源笔记 v3.8.4。经核验，v3.8.4 的插件 API 变更（addTopBar 支持自定义元素、onDataChanged 循环修复等）均为向后兼容的增量或内核侧修复，本插件调用的 addTopBar/addCommand/protyle.insert 等接口与 `aria-label` tooltip 逻辑均不受影响，无需代码改动 |
 | 2.8.12 | 2026-08-20 | 修复顶栏「自动转义」按钮 tooltip 与实际状态不一致：思源桌面端 tooltip 读取 `aria-label` 而非 `.title`，`_updateEscapeButton()` 现在会同步更新 `aria-label`（桌面端）和 `.b3-menu__label`（移动端），使 tooltip 正确显示开启/关闭状态 |
